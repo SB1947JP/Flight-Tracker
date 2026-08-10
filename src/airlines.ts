@@ -116,6 +116,40 @@ export const AIRLINE_CALLSIGNS: Record<string, string> = {
 };
 
 /**
+ * Every callsign an aircraft *might* be broadcasting for this flight number.
+ *
+ * There is no single right answer. Airlines pad the number differently — the
+ * same flight can go out as JST24, JST024 or JST0024 — and the padding is a
+ * per-airline habit rather than a rule, so it cannot be derived, only tried.
+ * A few carriers also broadcast the ticket number unchanged.
+ *
+ * Ordered most to least likely. Callers try them in turn and remember which one
+ * worked, so the guessing happens once.
+ */
+export function callsignVariants(flightNumber: string): string[] {
+  const primary = toCallsign(flightNumber);
+  const cleaned = flightNumber.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const variants: string[] = [];
+
+  if (primary) {
+    variants.push(primary);
+    const split = /^([A-Z]{3})(\d+)$/.exec(primary);
+    if (split) {
+      const [, prefix, digits] = split;
+      // Zero-padded forms, skipping any that equal what we already have.
+      for (const width of [3, 4]) {
+        if (digits.length < width) variants.push(`${prefix}${digits.padStart(width, '0')}`);
+      }
+    }
+  }
+
+  // The ticket number itself, for the carriers that broadcast it unchanged.
+  if (cleaned && !variants.includes(cleaned)) variants.push(cleaned);
+
+  return variants;
+}
+
+/**
  * Turn what someone typed into the callsign an aircraft broadcasts.
  *
  * Accepts either form, because both are things people have to hand: a ticket

@@ -201,7 +201,10 @@ function Timeline({ flight, progress, now }: { flight: ScheduledFlight; progress
  * rather than left for the reader to infer from a subtle colour.
  */
 function LiveBar({ live, status, now }: { live: LiveState; status?: FlightProgress['status']; now: number }) {
-  const { callsign, lastFix, result, loading, refresh } = live;
+  const { callsign, matchedCallsign, lastFix, result, loading, refresh } = live;
+  // Name the spelling that actually matched — it is not always the one searched
+  // for, and when it differs that difference is worth seeing.
+  const found = matchedCallsign ?? callsign;
 
   // Without a schedule there is no "not yet departed" to wait for — the aircraft
   // is either transmitting or it isn't, so the search runs continuously.
@@ -217,13 +220,13 @@ function LiveBar({ live, status, now }: { live: LiveState; status?: FlightProgre
   } else if (lastFix && now - lastFix.receivedAt < FIX_FRESH_MS) {
     tone = 'live';
     const age = Math.max(0, Math.round((now - lastFix.receivedAt) / 1000));
-    text = `Live position from ${callsign} · ${age}s ago`;
+    text = `Live position from ${found} · ${age}s ago`;
   } else if (lastFix) {
     tone = 'stale';
-    text = `No signal from ${callsign} for ${formatDuration(now - lastFix.receivedAt)} — showing its last known position. Long stretches over ocean are normal.`;
+    text = `No signal from ${found} for ${formatDuration(now - lastFix.receivedAt)} — showing its last known position. Long stretches over ocean are normal.`;
   } else if (result?.state === 'not-found') {
     tone = 'stale';
-    text = `No aircraft broadcasting as ${callsign} right now. It may be out of range, or the callsign may differ from the flight number.`;
+    text = `Nothing broadcasting as ${callsign} right now. Over an ocean or anywhere without receivers on the ground below, that is normal and expected — the position above is the schedule estimate.`;
   } else if (result?.state === 'error') {
     tone = 'stale';
     text = result.message;

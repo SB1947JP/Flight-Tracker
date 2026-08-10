@@ -108,32 +108,43 @@ function num(source: Record<string, unknown>, ...keys: string[]): number | undef
  * `signal` lets a pending request be abandoned when the user selects a
  * different flight, so a slow reply can't overwrite a newer one.
  */
-export async function fetchLivePosition(callsign: string, signal?: AbortSignal): Promise<LiveResult> {
+async function askOneService(callsign: string, signal?: AbortSignal) {
   const encoded = encodeURIComponent(callsign);
   const failures: string[] = [];
-  let payload: unknown;
-  let answered = '';
 
   // Start with whichever service worked last, then the rest.
   const order = ENDPOINTS.map((_, i) => ENDPOINTS[(preferred + i) % ENDPOINTS.length]);
 
   for (const endpoint of order) {
-    try {
-      const response = await fetch(endpoint.url(encoded), { signal, headers: { Accept: 'application/json' } });
-      if (!response.ok) {
-        failures.push(`${endpoint.name} replied ${response.status}`);
-        continue;
-      }
-      payload = await response.json();
-      answered = endpoint.name;
-      preferred = ENDPOINTS.indexOf(endpoint);
-      break;
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        return { state: 'error', message: 'cancelled' };
-      }
-      failures.push(`${endpoint.name} unreachable`);
+    const response = await fetch(endpoint.url(encoded), { signal, headers: { Accept: 'application/json' } }).catch(
+      (error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') throw error;
+        failures.push(`${endpoint.name} unreachable`);
+        return null;
+      },
+    );
+    if (!response) continue;
+    if (!response.ok) {
+      failures.push(`${endpoint.name} replied ${response.status}`);
+      continue;
     }
+    return { payload: (await response.json()) as unknown, answered: endpoint.name, failures };
+  }
+  return { payload: undefined, answered: '', failures };
+}
+
+export async function fetchLivePosition(callsign: string, signal?: AbortSignal): Promise<LiveResult> {
+  let payload: unknown;
+  let answered = '';
+  let failures: string[] = [];
+
+  try {
+    ({ payload, answered, failures } = await askOneService(callsign, signal));
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      return { state: 'error', message: 'cancelled' };
+    }
+    throw error;
   }
 
   if (!answered) {

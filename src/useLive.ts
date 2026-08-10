@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { toCallsign } from './airlines';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { callsignVariants, toCallsign } from './airlines';
 import { Flight } from './flights';
 import { fetchLivePosition, LivePosition, LiveResult } from './live';
 
@@ -22,12 +22,26 @@ import { fetchLivePosition, LivePosition, LiveResult } from './live';
  */
 
 const POLL_MS = 20_000;
+/**
+ * Cadence before anything has ever been found.
+ *
+ * Until there's a hit, each poll may try several callsign spellings, so it costs
+ * several requests instead of one. An aircraft over an ocean can be unfindable
+ * for hours, and hammering a free volunteer-run service through all of it would
+ * be rude. Once a spelling works, that one is used and the normal rate resumes.
+ */
+const SEARCHING_POLL_MS = 60_000;
 /** Past this age a fix is stale enough that the label should stop saying "live". */
 export const FIX_FRESH_MS = 120_000;
 
 export interface LiveState {
   /** The radio callsign being searched for, or null if it couldn't be worked out. */
   callsign: string | null;
+  /** The spelling that actually matched an aircraft, once one has. Worth showing
+   *  rather than the one searched for: they differ whenever the airline pads its
+   *  flight numbers, and the difference is the answer to "why couldn't it find
+   *  my flight". */
+  matchedCallsign: string | null;
   /** The most recent successful fix, kept even once the signal drops. */
   lastFix: LivePosition | null;
   /** Outcome of the most recent attempt. */
@@ -40,10 +54,15 @@ export interface LiveState {
 
 export function useLive(flight: Flight | undefined, isAirborne: boolean): LiveState {
   const callsign = flight ? toCallsign(flight.number) : null;
+  const variants = useMemo(() => (flight ? callsignVariants(flight.number) : []), [flight?.number]);
+  // The spelling that last worked. Trying the others again on every poll would
+  // triple the traffic for no benefit.
+  const workingRef = useRef<string | null>(null);
   const [lastFix, setLastFix] = useState<LivePosition | null>(null);
   const [result, setResult] = useState<LiveResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [tick, setTick] = useState(0);
+  const [matchedCallsign, setMatchedCallsign] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   // A different flight is a different aircraft: drop the previous one's fix
@@ -51,6 +70,8 @@ export function useLive(flight: Flight | undefined, isAirborne: boolean): LiveSt
   useEffect(() => {
     setLastFix(null);
     setResult(null);
+    setMatchedCallsign(null);
+    workingRef.current = null;
   }, [flight?.id]);
 
   const refresh = useCallback(() => setTick((t) => t + 1), []);
@@ -67,7 +88,20 @@ export function useLive(flight: Flight | undefined, isAirborne: boolean): LiveSt
       abortRef.current = controller;
 
       setLoading(true);
-      const outcome = await fetchLivePosition(callsign, controller.signal);
+
+      // Once a spelling has worked, ask only for that one.
+      const toTry = workingRef.current ? [workingRef.current] : variants;
+      let matched = toTry[0];
+      let outcome = await fetchLivePosition(toTry[0], controller.signal);
+      for (let i = 1; i < toTry.length && outcome.state === 'not-found'; i++) {
+        matched = toTry[i];
+        outcome = await fetchLivePosition(toTry[i], controller.signal);
+      }
+      if (outcome.state === 'found') {
+        workingRef.current = matched;
+        setMatchedCallsign(matched);
+      }
+
       if (cancelled) return;
       setLoading(false);
 
@@ -82,7 +116,7 @@ export function useLive(flight: Flight | undefined, isAirborne: boolean): LiveSt
     poll();
     const id = window.setInterval(() => {
       if (!document.hidden) poll();
-    }, POLL_MS);
+    }, workingRef.current ? POLL_MS : SEARCHING_POLL_MS);
 
     // A tab that comes back to the front should show current information
     // immediately rather than up to twenty seconds of staleness.
@@ -97,7 +131,7 @@ export function useLive(flight: Flight | undefined, isAirborne: boolean): LiveSt
       document.removeEventListener('visibilitychange', onVisible);
       abortRef.current?.abort();
     };
-  }, [callsign, isAirborne, tick]);
+  }, [callsign, isAirborne, tick, variants]);
 
-  return { callsign, lastFix, result, loading, refresh };
+  return { callsign, matchedCallsign, lastFix, result, loading, refresh };
 }
