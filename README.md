@@ -62,7 +62,7 @@ node tools/build-singlefile.mjs    # after a build: inline everything into dist/
 | `src/airlines.ts` | Ticket-number → radio-callsign translation |
 | `src/airports.ts` | The bundled airport table |
 | `src/coastline.ts` | Generated basemap geometry — do not hand-edit |
-| `src/RouteMap.tsx` | Web Mercator projection, the basemap, the route and the aircraft |
+| `src/RouteMap.tsx` | Web Mercator projection, the basemap, the route, the aircraft, full screen |
 | `src/FlightDetail.tsx` | The tracking view for one flight |
 | `src/FlightForm.tsx` | Add/edit, with airport search and schedule validation |
 | `tools/` | The coastline generator and the single-file bundler |

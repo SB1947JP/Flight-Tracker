@@ -40,18 +40,17 @@ import { FlightProgress } from './flights';
  * Curves at the nose and tail, straight swept edges through the wings — which is
  * what makes it read as an aeroplane at 20 pixels rather than as an arrowhead.
  *
- * A tapered nose, wings almost square to the fuselage, and a small swept tail
- * cut straight across the back.
+ * A slim fuselage, hard-swept wings and a swept tail cut straight across the
+ * back: the aeroplane glyph a phone shows for flight mode, which is what was
+ * asked for.
  *
- * The wings are the one place this departs from the aeroplane glyph a phone
- * shows for flight mode, and it is a deliberate departure. That glyph has
- * dramatically swept wings, and it can afford them because it is only ever
- * drawn at one angle. A map marker turns to face its heading, and under
- * rotation heavy sweep is ruinous: the two wings end up at completely different
- * apparent angles, the long nose starts reading as a tail, and somewhere around
- * 120-150 degrees the whole thing stops being an aeroplane and becomes a star.
- * Square wings give the same silhouette at every heading. Legibility at all
- * 360 degrees beats fidelity to a static icon.
+ * Worth knowing before anyone "fixes" this. A square-winged version was tried
+ * and rejected on looks. The reason it was tried is that heavy sweep costs
+ * something under rotation, and a map marker turns to face its heading: at
+ * around 120-150 degrees the two wings sit at very different apparent angles
+ * and the silhouette reads less clearly than it does upright. That was a
+ * considered trade in favour of the icon, not an oversight — so if this shape
+ * is ever revisited, revisit it at 150 degrees, not at 0.
  *
  * Two proportions here exist because of *rotation*, which is the thing that
  * makes a map marker hard and that judging it upright completely hides.
@@ -86,22 +85,22 @@ import { FlightProgress } from './flights';
  * two white lines with a sliver of colour between them.
  */
 const PLANE_PATH = [
-  'M0 -17',
-  'C1.7 -15.5 3.6 -10.6 3.7 -5.4', // long nose — the shape's one asymmetry
-  'L3.7 -1.8',
-  'L13.6 -1.0', // wings run almost square to the fuselage — see above
-  'L13.6 4.4', // wing tip, deep enough to survive the outline
-  'L3.7 5.0', // trailing edge, meeting the body without a pinch
-  'L3.7 9.6',
-  'L7.0 13.8', // small tailplane, swept
-  'L-7.0 13.8', // straight across the back
-  'L-3.7 9.6',
-  'L-3.7 5.0',
-  'L-13.6 4.4',
-  'L-13.6 -1.0',
-  'L-3.7 -1.8',
-  'L-3.7 -5.4',
-  'C-3.6 -10.6 -1.7 -15.5 0 -17',
+  'M0 -16',
+  'C1.0 -15.2 2.3 -11.6 2.4 -7.0', // long tapered nose
+  'L2.4 -4.4',
+  'L13.4 4.5', // wing leading edge, swept hard back to a point
+  'L13.4 7.2', // wing tip
+  'L2.4 3.1', // thin trailing edge
+  'L2.4 7.4',
+  'L5.7 14.2', // tail, swept back
+  'L-5.7 14.2', // straight across the back
+  'L-2.4 7.4',
+  'L-2.4 3.1',
+  'L-13.4 7.2',
+  'L-13.4 4.5',
+  'L-2.4 -4.4',
+  'L-2.4 -7.0',
+  'C-2.3 -11.6 -1.0 -15.2 0 -16',
   'Z',
 ].join(' ');
 
@@ -191,7 +190,52 @@ export function RouteMap({
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [view, setView] = useState<{ zoom: number; x: number; y: number } | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const dragRef = useRef<{ pointerId: number; lastX: number; lastY: number } | null>(null);
+
+  /**
+   * Full screen, by two routes.
+   *
+   * Desktop browsers have a real Fullscreen API that hides the browser's own
+   * chrome. iOS refuses it for anything but video, which is most of the phones
+   * this will be read on — so the map also expands to fill the window by itself.
+   * The CSS route is what actually runs on a phone; the native call is a bonus
+   * where it is allowed, and its failure is expected rather than exceptional.
+   */
+  const toggleExpanded = useCallback(() => {
+    const next = !expanded;
+    setExpanded(next);
+    const el = containerRef.current;
+    if (next) {
+      el?.requestFullscreen?.().catch(() => {
+        // iOS, or a browser refusing the request. The CSS expansion stands on
+        // its own, so there is nothing to recover from and nothing to report.
+      });
+    } else if (document.fullscreenElement) {
+      document.exitFullscreen?.().catch(() => {});
+    }
+  }, [expanded]);
+
+  // Leaving full screen by Escape or the browser's own control has to put the
+  // map back in the page, or it would stay expanded over everything.
+  useEffect(() => {
+    const onChange = () => {
+      if (!document.fullscreenElement) setExpanded(false);
+    };
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  // Escape closes the CSS expansion too, where there is no native full screen
+  // to leave and so no browser affordance for getting out.
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !document.fullscreenElement) setExpanded(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [expanded]);
 
   // With no route, both ends collapse onto the aircraft itself, so the fitting
   // and projection below work unchanged and simply frame a single point.
@@ -283,6 +327,13 @@ export function RouteMap({
   };
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    // The controls sit inside the draggable surface, so a press on one of them
+    // reaches this handler first. Capturing the pointer here would send the
+    // matching pointerup to the container instead of the button, and the button
+    // would never see a click at all — which is exactly what was happening:
+    // zoom, fit and full screen were all inert, and the map only appeared to
+    // work because dragging never needed them.
+    if ((e.target as HTMLElement).closest('button')) return;
     dragRef.current = { pointerId: e.pointerId, lastX: e.clientX, lastY: e.clientY };
     e.currentTarget.setPointerCapture?.(e.pointerId);
   };
@@ -380,7 +431,11 @@ export function RouteMap({
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
-      className="relative w-full h-full min-h-[16rem] overflow-hidden rounded border border-neutral-700 bg-neutral-950 cursor-grab active:cursor-grabbing touch-none select-none"
+      className={`overflow-hidden bg-neutral-950 cursor-grab active:cursor-grabbing touch-none select-none ${
+        expanded
+          ? 'fixed inset-0 z-50 w-screen h-screen'
+          : 'relative w-full h-full min-h-[16rem] rounded border border-neutral-700'
+      }`}
     >
       {/* Fallback layer, drawn first and covered by the tiles when they load. */}
       {view && width > 0 && (
@@ -514,7 +569,7 @@ export function RouteMap({
                 d={PLANE_PATH}
                 fill={UI_COLORS.danger}
                 stroke="#fafafa"
-                strokeWidth={0.75}
+                strokeWidth={0.8}
                 strokeLinejoin="round"
                 strokeLinecap="round"
               />
@@ -548,6 +603,21 @@ export function RouteMap({
         >
           <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
             <path d="M1.5 5V1.5H5M11 1.5h3.5V5M14.5 11v3.5H11M5 14.5H1.5V11" strokeLinecap="round" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          onClick={toggleExpanded}
+          title={expanded ? 'Leave full screen' : 'Full screen'}
+          aria-label={expanded ? 'Leave full screen' : 'Full screen'}
+          className="w-6 h-6 flex items-center justify-center rounded bg-neutral-900/85 border border-neutral-600 text-neutral-200 hover:bg-neutral-800"
+        >
+          <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            {expanded ? (
+              <path d="M6.5 1.5v5h-5M9.5 14.5v-5h5M1.5 9.5h5v5M14.5 6.5h-5v-5" />
+            ) : (
+              <path d="M1.5 6V1.5H6M10 1.5h4.5V6M14.5 10v4.5H10M6 14.5H1.5V10" />
+            )}
           </svg>
         </button>
       </div>
