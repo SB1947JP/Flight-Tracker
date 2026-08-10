@@ -4,7 +4,20 @@ import { Flight, STATUS_LABEL, loadFlights, resolveProgress, saveFlights } from 
 import { useLive } from './useLive';
 import { FlightDetail } from './FlightDetail';
 import { FlightForm } from './FlightForm';
-import { formatDuration } from './time';
+import { formatDate, formatDuration } from './time';
+
+/**
+ * Which flight was last being looked at.
+ *
+ * Kept across reloads because the fallback below — "show whatever is in the
+ * air" — is a good guess only when there is nothing better. Without this, a
+ * reload silently jumped away from the flight you had selected to a different
+ * one that happened to be airborne. With two entries for the same flight number
+ * (easily made by correcting a mistyped date by adding a second one rather than
+ * editing the first) the two are indistinguishable in the header, and it reads
+ * as the app claiming your unflown flight is halfway to its destination.
+ */
+const SELECTED_KEY = 'flight-tracker/selected/v1';
 
 /**
  * A simple flight tracker.
@@ -30,12 +43,27 @@ function useNow(intervalMs = 1000): number {
 export default function App() {
   const now = useNow();
   const [flights, setFlights] = useState<Flight[]>(() => loadFlights());
-  const [selectedId, setSelectedId] = useState<string | null>(() => null);
+  const [selectedId, setSelectedId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(SELECTED_KEY);
+    } catch {
+      return null;
+    }
+  });
   const [editing, setEditing] = useState<{ mode: 'new' } | { mode: 'edit'; flight: Flight } | null>(null);
 
   useEffect(() => {
     saveFlights(flights);
   }, [flights]);
+
+  useEffect(() => {
+    try {
+      if (selectedId) localStorage.setItem(SELECTED_KEY, selectedId);
+      else localStorage.removeItem(SELECTED_KEY);
+    } catch {
+      // Losing the selection on reload is a small inconvenience, not a failure.
+    }
+  }, [selectedId]);
 
   // Sorted by departure so the list reads as an itinerary rather than as the
   // order things happened to be entered in.
@@ -126,6 +154,14 @@ export default function App() {
                     <div className="text-xs text-neutral-400 tracking-wide">
                       {flight.from} → {flight.to}
                     </div>
+                    {/* The date is what separates two entries for the same
+                        flight number on different days — without it they are
+                        the same three lines twice. */}
+                    {progress && (
+                      <div className="text-[10px] text-neutral-500">
+                        {formatDate(flight.departUtc, progress.origin.tz)}
+                      </div>
+                    )}
                     {progress && (
                       <div className="mt-1.5 h-0.5 rounded-full" style={{ backgroundColor: UI_COLORS.muted }}>
                         <div
@@ -154,6 +190,7 @@ export default function App() {
               </h2>
               <FlightForm
                 existing={editing.mode === 'edit' ? editing.flight : undefined}
+                others={ordered.filter((f) => f.id !== (editing.mode === 'edit' ? editing.flight.id : null))}
                 onSave={save}
                 onCancel={() => setEditing(null)}
               />

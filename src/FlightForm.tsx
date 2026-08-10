@@ -150,10 +150,13 @@ function TimeField({
 
 export function FlightForm({
   existing,
+  others,
   onSave,
   onCancel,
 }: {
   existing?: Flight;
+  /** Flights already saved, so a second copy of one can be pointed out. */
+  others: Flight[];
   onSave: (flight: Flight) => void;
   onCancel: () => void;
 }) {
@@ -171,6 +174,13 @@ export function FlightForm({
 
   const origin = findAirport(from);
   const destination = findAirport(to);
+
+  // Correcting a mistake by adding a second entry rather than editing the first
+  // is a natural thing to do, and it leaves two flights that look identical
+  // everywhere except their dates.
+  const duplicate = others.find(
+    (f) => f.number === number.trim().toUpperCase() && f.from === from && f.to === to,
+  );
 
   /**
    * What this schedule means *right now* — already landed, already flying, or
@@ -294,6 +304,13 @@ export function FlightForm({
           className={inputClass}
         />
       </div>
+
+      {duplicate && (
+        <p className="text-xs leading-snug text-neutral-400">
+          You already have a {duplicate.number} from {duplicate.from} to {duplicate.to} saved. Adding this makes a
+          second one — edit the existing flight instead if you meant to correct it.
+        </p>
+      )}
 
       {timing && (
         <p className="text-xs leading-snug" style={{ color: UI_COLORS.danger }}>
