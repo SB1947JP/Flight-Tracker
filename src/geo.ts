@@ -93,3 +93,35 @@ export function samplePath(a: LatLon, b: LatLon, from: number, to: number, segme
   }
   return points;
 }
+
+/**
+ * The point reached by travelling `distanceKm` from `start` on a constant
+ * bearing, along a great circle.
+ *
+ * Used to carry the aircraft forward between position reports. A report arrives
+ * every twenty seconds or so; without this the marker sits still and then jumps,
+ * which reads as a broken app rather than a flying aeroplane. With it the marker
+ * advances every second along the track and at the speed the aircraft itself
+ * last reported — the same dead reckoning a navigator would do, and the same
+ * thing every other tracker does between updates.
+ *
+ * It is an assumption, not a measurement, and it decays: see the cap in
+ * `FlightDetail`.
+ */
+export function destinationPoint(start: LatLon, bearingDegrees: number, distanceKm: number): LatLon {
+  const δ = distanceKm / EARTH_RADIUS_KM;
+  const θ = toRad(bearingDegrees);
+  const φ1 = toRad(start.lat);
+  const λ1 = toRad(start.lon);
+
+  const sinφ2 = Math.sin(φ1) * Math.cos(δ) + Math.cos(φ1) * Math.sin(δ) * Math.cos(θ);
+  const φ2 = Math.asin(Math.min(1, Math.max(-1, sinφ2)));
+  const λ2 =
+    λ1 + Math.atan2(Math.sin(θ) * Math.sin(δ) * Math.cos(φ1), Math.cos(δ) - Math.sin(φ1) * sinφ2);
+
+  return {
+    lat: toDeg(φ2),
+    // Keep longitude in -180..180 so the map's unwrapping has a sane input.
+    lon: ((toDeg(λ2) + 540) % 360) - 180,
+  };
+}

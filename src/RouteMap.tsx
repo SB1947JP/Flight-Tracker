@@ -33,7 +33,9 @@ import { FlightProgress } from './flights';
  */
 
 /**
- * The aircraft marker: nose at the top, symmetric about x, roughly 25 units tall.
+ * The aircraft marker: nose at the top, symmetric about x, roughly 32 units long
+ * against a 27-unit span — deliberately longer than it is wide, which is what
+ * makes it read as an airliner rather than a dart.
  *
  * Curves at the nose and tail, straight swept edges through the wings — which is
  * what makes it read as an aeroplane at 20 pixels rather than as an arrowhead.
@@ -52,23 +54,23 @@ import { FlightProgress } from './flights';
  * two white lines with a sliver of colour between them.
  */
 const PLANE_PATH = [
-  'M0 -14',
-  'C1.0 -13.3 2.3 -10.6 2.4 -6.6', // long tapered nose
+  'M0 -16',
+  'C1.0 -15.2 2.3 -11.6 2.4 -7.0', // long tapered nose
   'L2.4 -4.4',
   'L13.4 4.5', // wing leading edge, swept hard back to a point
   'L13.4 7.2', // wing tip
   'L2.4 3.1', // trailing edge, back to the root
-  'L2.4 6.6',
-  'L5.7 12.8', // tail, swept back to a point
-  'L0 11.4', // and notched between the two, shallowly
-  'L-5.7 12.8',
-  'L-2.4 6.6',
+  'L2.4 7.4',
+  'L5.7 14.2', // tail, swept back to a point
+  'L0 12.6', // and notched between the two, shallowly
+  'L-5.7 14.2',
+  'L-2.4 7.4',
   'L-2.4 3.1',
   'L-13.4 7.2',
   'L-13.4 4.5',
   'L-2.4 -4.4',
-  'L-2.4 -6.6',
-  'C-2.3 -10.6 -1.0 -13.3 0 -14',
+  'L-2.4 -7.0',
+  'C-2.3 -11.6 -1.0 -15.2 0 -16',
   'Z',
 ].join(' ');
 

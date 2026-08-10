@@ -1,8 +1,38 @@
 import { ACCENT_BORDER, ACCENT_WASH, UI_COLORS } from './palette';
 import { Flight, FlightProgress, PHASE_LABEL, STATUS_LABEL, ScheduledFlight, hasSchedule, resolveProgress } from './flights';
 import { RouteMap } from './RouteMap';
+import { destinationPoint } from './geo';
 import { clockDiffersFrom, formatClock, formatDate, formatDuration, formatInDeviceZone, formatZoneAbbr } from './time';
 import { FIX_FRESH_MS, LiveState } from './useLive';
+import { LivePosition } from './live';
+
+/**
+ * How long the aircraft is carried forward from its last report.
+ *
+ * Between reports the marker advances along the reported track at the reported
+ * speed, so it visibly flies rather than sitting still and jumping every twenty
+ * seconds. That is an assumption, and assumptions rot: an aircraft that has said
+ * nothing for four minutes may have turned, descended or landed. Past this the
+ * marker stops where it was last actually seen, which is the honest place for it.
+ */
+const DEAD_RECKON_MAX_MS = 3 * 60_000;
+
+/** The aircraft's position now, carried forward from its last report. */
+function projectedPosition(fix: LivePosition | null, now: number) {
+  if (!fix) return null;
+  const elapsed = now - fix.receivedAt;
+  if (
+    elapsed <= 0 ||
+    elapsed > DEAD_RECKON_MAX_MS ||
+    fix.groundSpeedKmh === undefined ||
+    fix.headingDeg === undefined
+  ) {
+    return fix;
+  }
+  const travelled = fix.groundSpeedKmh * (elapsed / 3_600_000);
+  const moved = destinationPoint({ lat: fix.lat, lon: fix.lon }, fix.headingDeg, travelled);
+  return { ...fix, lat: moved.lat, lon: moved.lon };
+}
 
 /** The tracking view for one flight: where it is, and when it gets there. */
 export function FlightDetail({
@@ -19,6 +49,9 @@ export function FlightDetail({
   onDelete: () => void;
 }) {
   const progress = resolveProgress(flight, now);
+  // Recomputed on every tick, so the marker creeps along the map second by
+  // second instead of standing still between reports.
+  const shownPosition = projectedPosition(live.lastFix, now);
 
   // A schedule was given but an airport code in it is unknown, so no route can
   // be drawn. Distinct from having no schedule at all, and worth saying so.
@@ -44,7 +77,7 @@ export function FlightDetail({
       <LiveBar live={live} status={progress?.status} now={now} />
 
       <div className="flex-1 min-h-[16rem]">
-        <RouteMap progress={progress} livePosition={live.lastFix} />
+        <RouteMap progress={progress} livePosition={shownPosition} />
       </div>
 
       <Stats progress={progress} live={live} now={now} />
@@ -338,6 +371,9 @@ function Stats({ progress, live, now }: { progress: FlightProgress | null; live:
   }
 
   if (fix) {
+    // Deliberately the *reported* position, not the carried-forward one the map
+    // draws. Printing a coordinate that changes every second would dress an
+    // assumption up as a measurement, to two decimal places.
     stats.push({ label: 'Position', value: `${fix.lat.toFixed(2)}, ${fix.lon.toFixed(2)}`, live: fixIsFresh });
   } else if (progress) {
     stats.push({
@@ -375,9 +411,9 @@ function Stats({ progress, live, now }: { progress: FlightProgress | null; live:
           asked. */}
       <p className="mt-3 text-[11px] text-neutral-600 leading-snug">
         {fixIsFresh && progress
-          ? 'Live: the figures marked · come from the aircraft itself. The rest — distance, time left — are worked out from your schedule, along a direct route.'
+          ? 'Live: the figures marked · come from the aircraft itself, and the map carries it forward between reports. The rest — distance, time left — are worked out from your schedule, along a direct route.'
           : fixIsFresh
-            ? 'Live: all of these come from the aircraft itself.'
+            ? 'Live: all of these come from the aircraft itself, and the map carries it forward between reports.'
             : 'No live signal at the moment, so these come from the schedule you entered — a direct route flown at a constant rate, which takes no account of real routing, winds, holding or delays.'}
       </p>
     </div>
