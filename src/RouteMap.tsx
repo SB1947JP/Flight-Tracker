@@ -40,17 +40,23 @@ import { FlightProgress } from './flights';
  * Curves at the nose and tail, straight swept edges through the wings — which is
  * what makes it read as an aeroplane at 20 pixels rather than as an arrowhead.
  *
- * A slim fuselage, hard-swept wings and a swept tail cut straight across the
- * back: the aeroplane glyph a phone shows for flight mode, which is what was
- * asked for.
+ * An airliner seen from above, in the manner of the markers on the big flight
+ * tracking sites: long fuselage, swept wings with engines slung under them, and
+ * a separate tailplane at the back.
  *
- * Worth knowing before anyone "fixes" this. A square-winged version was tried
- * and rejected on looks. The reason it was tried is that heavy sweep costs
- * something under rotation, and a map marker turns to face its heading: at
- * around 120-150 degrees the two wings sit at very different apparent angles
- * and the silhouette reads less clearly than it does upright. That was a
- * considered trade in favour of the icon, not an oversight — so if this shape
- * is ever revisited, revisit it at 150 degrees, not at 0.
+ * This shape solves a problem several earlier attempts had. Those were drawn
+ * from the aeroplane glyph a phone shows for flight mode — one shape, wings
+ * and tail merged, and no engines — which is a fine icon precisely because it
+ * is only ever drawn at one angle. Rotated to a heading it lost its read;
+ * around 120-150 degrees it stopped looking like an aeroplane and started
+ * looking like a star. The separate tailplane and the engines give the eye
+ * enough landmarks to find the aircraft's axis at any angle, which is why the
+ * tracking sites all draw it this way.
+ *
+ * The outline is dark rather than white. Over map tiles darkened to half
+ * brightness a dark line stays crisp against pale sea, pale land and dark
+ * city alike, where a white one bulks the shape out and blurs its edges.
+ * Checked over all three.
  *
  * Two proportions here exist because of *rotation*, which is the thing that
  * makes a map marker hard and that judging it upright completely hides.
@@ -85,24 +91,38 @@ import { FlightProgress } from './flights';
  * two white lines with a sliver of colour between them.
  */
 const PLANE_PATH = [
-  'M0 -16',
-  'C1.0 -15.2 2.3 -11.6 2.4 -7.0', // long tapered nose
-  'L2.4 -4.4',
-  'L13.4 4.5', // wing leading edge, swept hard back to a point
-  'L13.4 7.2', // wing tip
-  'L2.4 3.1', // thin trailing edge
-  'L2.4 7.4',
-  'L5.7 14.2', // tail, swept back
-  'L-5.7 14.2', // straight across the back
-  'L-2.4 7.4',
-  'L-2.4 3.1',
-  'L-13.4 7.2',
-  'L-13.4 4.5',
-  'L-2.4 -4.4',
-  'L-2.4 -7.0',
-  'C-2.3 -11.6 -1.0 -15.2 0 -16',
+  'M0 -19',
+  'C1.3 -18.1 2.4 -14.4 2.5 -9.4', // nose
+  'L2.5 -2.6', // fuselage, down to the wing root
+  'L15.0 6.2', // wing leading edge, swept
+  'L15.0 8.6', // wing tip
+  'L2.5 4.6', // wing trailing edge
+  'L2.5 11.0', // rear fuselage
+  'L6.6 15.2', // tailplane leading edge
+  'L6.6 17.0', // tailplane tip
+  'L1.5 15.6', // tailplane trailing edge
+  'L1.5 18.2', // tail, cut flat
+  'L-1.5 18.2',
+  'L-1.5 15.6',
+  'L-6.6 17.0',
+  'L-6.6 15.2',
+  'L-2.5 11.0',
+  'L-2.5 4.6',
+  'L-15.0 8.6',
+  'L-15.0 6.2',
+  'L-2.5 -2.6',
+  'L-2.5 -9.4',
+  'C-2.4 -14.4 -1.3 -18.1 0 -19',
   'Z',
 ].join(' ');
+
+/** Engine nacelles, slung under each wing. Two units wide and easy to dismiss
+ *  at this size, but they are a good part of why the silhouette reads as an
+ *  airliner rather than a dart. */
+const ENGINES = [
+  { x: 6.0, y: 1.4 },
+  { x: -8.8, y: 1.4 },
+];
 
 const TILE_SIZE = 256;
 const MIN_ZOOM = 1;
@@ -556,7 +576,13 @@ export function RouteMap({
           )}
 
           {(livePosition || (progress && progress.status !== 'scheduled')) && (
-            <g transform={`translate(${planePx.left} ${planePx.top}) rotate(${planeHeading}) scale(1.05)`}>
+            <g
+              transform={`translate(${planePx.left} ${planePx.top}) rotate(${planeHeading}) scale(0.95)`}
+              fill={UI_COLORS.danger}
+              stroke="#141414"
+              strokeWidth={0.9}
+              strokeLinejoin="round"
+            >
               {/* A slim swept-wing silhouette in the manner of the aeroplane
                   glyph on a phone's status bar, rather than the blunt
                   straight-edged shape this started as. Drawn nose-up, so the
@@ -565,14 +591,10 @@ export function RouteMap({
                   The outline is doing real work: this sits over map tiles that
                   run from pale sea to dark city, and a solid fill alone
                   disappears against half of them. */}
-              <path
-                d={PLANE_PATH}
-                fill={UI_COLORS.danger}
-                stroke="#fafafa"
-                strokeWidth={0.8}
-                strokeLinejoin="round"
-                strokeLinecap="round"
-              />
+              <path d={PLANE_PATH} />
+              {ENGINES.map((e) => (
+                <rect key={e.x} x={e.x} y={e.y} width={2.8} height={6.6} rx={1.3} />
+              ))}
             </g>
           )}
         </svg>
