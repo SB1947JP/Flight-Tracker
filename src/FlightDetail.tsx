@@ -367,12 +367,18 @@ function Stats({ progress, live, now }: { progress: FlightProgress | null; live:
       {/* Say plainly what this is. There is no radar feed behind it, and a
           tracker that looked authoritative about a diverted flight would be
           worse than one that admits what it knows. */}
+      {/* This sentence has to agree with the live bar above it. Read on its own
+          it was taken as a verdict on the whole app — "worked out from the
+          schedule" sounds like nothing is being tracked — when it only ever
+          described the figures without a · beside them. It now leads with
+          whether there is a signal, which is the question actually being
+          asked. */}
       <p className="mt-3 text-[11px] text-neutral-600 leading-snug">
         {fixIsFresh && progress
-          ? 'Figures marked · are measured from the aircraft itself. The rest are worked out from the schedule you entered, along a direct route.'
+          ? 'Live: the figures marked · come from the aircraft itself. The rest — distance, time left — are worked out from your schedule, along a direct route.'
           : fixIsFresh
-            ? 'All of these are measured from the aircraft itself.'
-            : 'These are worked out from the schedule you entered — a direct route flown at a constant rate. They do not account for actual routing, winds, holding or delays.'}
+            ? 'Live: all of these come from the aircraft itself.'
+            : 'No live signal at the moment, so these come from the schedule you entered — a direct route flown at a constant rate, which takes no account of real routing, winds, holding or delays.'}
       </p>
     </div>
   );

@@ -38,33 +38,37 @@ import { FlightProgress } from './flights';
  * Curves at the nose and tail, straight swept edges through the wings — which is
  * what makes it read as an aeroplane at 20 pixels rather than as an arrowhead.
  *
- * The fuselage is deliberately fatter than a drawing at full size would want.
- * At the size this is actually seen the outline is a real fraction of the
- * body's width, and a slender fuselage ends up as two white lines with a sliver
- * of colour between them — a line drawing of an aeroplane rather than one.
+ * Modelled on the aeroplane glyph a phone shows for flight mode: a long tapered
+ * nose, hard-swept wings ending in points, and a single notched tail. An
+ * earlier version drew a separate tailplane as well as the notch, which is
+ * faithful to the glyph at poster size and at twenty-two pixels turns the back
+ * of the aircraft into a cluster of spikes. The notch that remains is kept
+ * shallow for the same reason — cut deep, the tail stops reading as a tail and
+ * starts reading as a letter W. That icon gets away with hairline
+ * proportions because it is solid white
+ * on a coloured disc; this one sits on map tiles and needs an outline, and an
+ * outline eats into the body from both sides. So the fuselage is a little
+ * fuller than the original — enough that it stays a shape rather than becoming
+ * two white lines with a sliver of colour between them.
  */
 const PLANE_PATH = [
-  'M0 -13.5',
-  'C1.5 -12.6 2.7 -9.6 2.8 -5.8', // nose cone into the fuselage
-  'L2.8 -3.0',
-  'L12.8 3.6', // wing leading edge, swept back
-  'L12.8 6.0', // wing tip
-  'L2.8 2.4', // trailing edge back to the root
-  'L2.8 7.2',
-  'L6.2 9.9', // tailplane
-  'L6.2 11.5',
-  'L2.2 9.9',
-  'C2.2 11.2 1.5 12.4 0 13.0', // tail cone
-  'C-1.5 12.4 -2.2 11.2 -2.2 9.9',
-  'L-6.2 11.5',
-  'L-6.2 9.9',
-  'L-2.8 7.2',
-  'L-2.8 2.4',
-  'L-12.8 6.0',
-  'L-12.8 3.6',
-  'L-2.8 -3.0',
-  'L-2.8 -5.8',
-  'C-2.7 -9.6 -1.5 -12.6 0 -13.5',
+  'M0 -14',
+  'C1.0 -13.3 2.3 -10.6 2.4 -6.6', // long tapered nose
+  'L2.4 -4.4',
+  'L13.4 4.5', // wing leading edge, swept hard back to a point
+  'L13.4 7.2', // wing tip
+  'L2.4 3.1', // trailing edge, back to the root
+  'L2.4 6.6',
+  'L5.7 12.8', // tail, swept back to a point
+  'L0 11.4', // and notched between the two, shallowly
+  'L-5.7 12.8',
+  'L-2.4 6.6',
+  'L-2.4 3.1',
+  'L-13.4 7.2',
+  'L-13.4 4.5',
+  'L-2.4 -4.4',
+  'L-2.4 -6.6',
+  'C-2.3 -10.6 -1.0 -13.3 0 -14',
   'Z',
 ].join(' ');
 
@@ -464,7 +468,7 @@ export function RouteMap({
           )}
 
           {(livePosition || (progress && progress.status !== 'scheduled')) && (
-            <g transform={`translate(${planePx.left} ${planePx.top}) rotate(${planeHeading}) scale(0.82)`}>
+            <g transform={`translate(${planePx.left} ${planePx.top}) rotate(${planeHeading}) scale(0.85)`}>
               {/* A slim swept-wing silhouette in the manner of the aeroplane
                   glyph on a phone's status bar, rather than the blunt
                   straight-edged shape this started as. Drawn nose-up, so the
