@@ -41,13 +41,12 @@ import { FlightProgress } from './flights';
  * what makes it read as an aeroplane at 20 pixels rather than as an arrowhead.
  *
  * Modelled on the aeroplane glyph a phone shows for flight mode: a long tapered
- * nose, hard-swept wings ending in points, and a single notched tail. An
- * earlier version drew a separate tailplane as well as the notch, which is
- * faithful to the glyph at poster size and at twenty-two pixels turns the back
- * of the aircraft into a cluster of spikes. The notch that remains is kept
- * shallow for the same reason — cut deep, the tail stops reading as a tail and
- * starts reading as a letter W. That icon gets away with hairline
- * proportions because it is solid white
+ * nose, hard-swept wings ending in points, and a swept tail cut straight across
+ * the back. The tail went through a notched version first, which is faithful to
+ * the glyph at poster size and at twenty-two pixels reads as jagged — a cluster
+ * of spikes with a separate tailplane, a letter W once the notch was deepened.
+ * A flat trailing edge says "tail" at this size with none of that noise. That
+ * icon gets away with hairline proportions because it is solid white
  * on a coloured disc; this one sits on map tiles and needs an outline, and an
  * outline eats into the body from both sides. So the fuselage is a little
  * fuller than the original — enough that it stays a shape rather than becoming
@@ -61,9 +60,8 @@ const PLANE_PATH = [
   'L13.4 7.2', // wing tip
   'L2.4 3.1', // trailing edge, back to the root
   'L2.4 7.4',
-  'L5.7 14.2', // tail, swept back to a point
-  'L0 12.6', // and notched between the two, shallowly
-  'L-5.7 14.2',
+  'L5.7 14.2', // tail, swept back
+  'L-5.7 14.2', // straight across the back — no notch
   'L-2.4 7.4',
   'L-2.4 3.1',
   'L-13.4 7.2',
