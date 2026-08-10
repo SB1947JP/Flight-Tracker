@@ -95,7 +95,16 @@ function coastlinePath(zoom: number): string {
   return parts.join('');
 }
 
-export function RouteMap({ progress }: { progress: FlightProgress }) {
+export function RouteMap({
+  progress,
+  livePosition,
+}: {
+  progress: FlightProgress;
+  /** A real reported position, when one is available. The aircraft is drawn
+   *  here instead of at its scheduled place along the route — which is the
+   *  whole point: the gap between the two is the delay. */
+  livePosition?: { lat: number; lon: number; headingDeg?: number } | null;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [view, setView] = useState<{ zoom: number; x: number; y: number } | null>(null);
@@ -215,7 +224,20 @@ export function RouteMap({ progress }: { progress: FlightProgress }) {
 
   const originPx = projected.length ? toPixel(projected[0]) : { left: 0, top: 0 };
   const destPx = projected.length ? toPixel(projected[projected.length - 1]) : { left: 0, top: 0 };
-  const planePx = projected.length ? toPixel(projected[Math.min(splitIndex, PATH_SEGMENTS)]) : { left: 0, top: 0 };
+  const schedulePx = projected.length ? toPixel(projected[Math.min(splitIndex, PATH_SEGMENTS)]) : { left: 0, top: 0 };
+
+  // A live aircraft can be anywhere, including well off the great circle, so it
+  // is projected on its own — then shifted onto whichever copy of the world the
+  // route was drawn on, or a Pacific flight would land a whole map-width away.
+  let planePx = schedulePx;
+  let planeHeading = progress.headingDeg;
+  if (livePosition && view) {
+    const world = 2 ** zoom;
+    let x = lonToTileX(livePosition.lon, zoom);
+    x -= Math.round((x - view.x) / world) * world;
+    planePx = toPixel({ x, y: latToTileY(livePosition.lat, zoom) });
+    if (livePosition.headingDeg !== undefined) planeHeading = livePosition.headingDeg;
+  }
 
   // Reprojecting 5,000 coastline points is the one genuinely expensive thing on
   // the page, and it depends only on zoom — so it is memoised and the pan is
@@ -296,8 +318,23 @@ export function RouteMap({ progress }: { progress: FlightProgress }) {
 
           {/* The aircraft, rotated to its current track. The glyph is drawn
               nose-up, so the rotation is the bearing itself. */}
+          {/* Where the schedule says it should be, shown only when the real
+              aircraft is somewhere else — a hollow marker the live one can be
+              compared against. */}
+          {livePosition && progress.status === 'enroute' && (
+            <circle
+              cx={schedulePx.left}
+              cy={schedulePx.top}
+              r={3.5}
+              fill="none"
+              stroke={UI_COLORS.muted}
+              strokeWidth={1.5}
+              strokeDasharray="2 2"
+            />
+          )}
+
           {progress.status !== 'scheduled' && (
-            <g transform={`translate(${planePx.left} ${planePx.top}) rotate(${progress.headingDeg})`}>
+            <g transform={`translate(${planePx.left} ${planePx.top}) rotate(${planeHeading})`}>
               <path
                 d="M0 -11 L2.6 -3.5 L11 3 L11 5.4 L2.6 2.6 L2.6 8 L5.4 10.4 L5.4 12 L0 10.4 L-5.4 12 L-5.4 10.4 L-2.6 8 L-2.6 2.6 L-11 5.4 L-11 3 L-2.6 -3.5 Z"
                 fill={UI_COLORS.danger}

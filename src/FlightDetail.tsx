@@ -2,16 +2,19 @@ import { ACCENT_BORDER, ACCENT_WASH, UI_COLORS } from './palette';
 import { Flight, FlightProgress, PHASE_LABEL, STATUS_LABEL, resolveProgress } from './flights';
 import { RouteMap } from './RouteMap';
 import { formatClock, formatDate, formatDuration, formatZoneAbbr } from './time';
+import { FIX_FRESH_MS, LiveState } from './useLive';
 
 /** The tracking view for one flight: where it is, and when it gets there. */
 export function FlightDetail({
   flight,
   now,
+  live,
   onEdit,
   onDelete,
 }: {
   flight: Flight;
   now: number;
+  live: LiveState;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -32,11 +35,13 @@ export function FlightDetail({
       <Header flight={flight} progress={progress} onEdit={onEdit} onDelete={onDelete} />
       <Timeline flight={flight} progress={progress} now={now} />
 
+      <LiveBar live={live} status={progress.status} now={now} />
+
       <div className="flex-1 min-h-[16rem]">
-        <RouteMap progress={progress} />
+        <RouteMap progress={progress} livePosition={live.lastFix} />
       </div>
 
-      <Stats progress={progress} />
+      <Stats progress={progress} live={live} now={now} />
     </div>
   );
 }
@@ -148,6 +153,77 @@ function Timeline({ flight, progress, now }: { flight: Flight; progress: FlightP
   );
 }
 
+/**
+ * One line saying where the numbers below are coming from.
+ *
+ * This is the most important text on the page. Everything else looks identical
+ * whether it is a real radio fix from the aircraft or arithmetic on a timetable,
+ * and the difference matters enormously — so it is stated outright, every time,
+ * rather than left for the reader to infer from a subtle colour.
+ */
+function LiveBar({ live, status, now }: { live: LiveState; status: FlightProgress['status']; now: number }) {
+  const { callsign, lastFix, result, loading, refresh } = live;
+
+  let tone: 'live' | 'stale' | 'idle' = 'idle';
+  let text: string;
+
+  if (status !== 'enroute') {
+    text = status === 'scheduled' ? 'Live tracking starts when the flight departs.' : 'Flight has landed.';
+  } else if (!callsign) {
+    text = "Couldn't work out this flight's radio callsign — try entering it directly (e.g. QFA12 instead of QF12).";
+  } else if (lastFix && now - lastFix.receivedAt < FIX_FRESH_MS) {
+    tone = 'live';
+    const age = Math.max(0, Math.round((now - lastFix.receivedAt) / 1000));
+    text = `Live position from ${callsign} · ${age}s ago`;
+  } else if (lastFix) {
+    tone = 'stale';
+    text = `No signal from ${callsign} for ${formatDuration(now - lastFix.receivedAt)} — showing its last known position. Long stretches over ocean are normal.`;
+  } else if (result?.state === 'not-found') {
+    tone = 'stale';
+    text = `No aircraft broadcasting as ${callsign} right now. It may be out of range, or the callsign may differ from the flight number.`;
+  } else if (result?.state === 'error') {
+    tone = 'stale';
+    text = result.message;
+  } else {
+    text = loading ? `Looking for ${callsign}…` : `Waiting for a signal from ${callsign}…`;
+  }
+
+  return (
+    <div
+      className="flex items-center gap-2 px-2.5 py-1.5 rounded border text-xs"
+      style={
+        tone === 'live'
+          ? { borderColor: ACCENT_BORDER, backgroundColor: ACCENT_WASH, color: UI_COLORS.accent }
+          : { borderColor: UI_COLORS.muted, color: UI_COLORS.heading }
+      }
+      role="status"
+    >
+      {/* A filled dot for a live signal, hollow for anything else — so the
+          state is legible without reading, and without adding a colour. */}
+      <span
+        aria-hidden="true"
+        className="w-1.5 h-1.5 rounded-full shrink-0"
+        style={
+          tone === 'live'
+            ? { backgroundColor: UI_COLORS.accent }
+            : { border: `1px solid ${UI_COLORS.muted}` }
+        }
+      />
+      <span className="min-w-0 flex-1 leading-snug">{text}</span>
+      {status === 'enroute' && callsign && (
+        <button
+          type="button"
+          onClick={refresh}
+          disabled={loading}
+          className="shrink-0 underline hover:text-neutral-200 disabled:opacity-50"
+        >
+          {loading ? 'Checking…' : 'Check now'}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function Endpoint({
   iata,
   clock,
@@ -176,21 +252,29 @@ function Endpoint({
   );
 }
 
-function Stats({ progress }: { progress: FlightProgress }) {
+function Stats({ progress, live, now }: { progress: FlightProgress; live: LiveState; now: number }) {
   const { position, totalDistanceKm, flownKm, remainingKm, averageSpeedKmh, headingDeg, status } = progress;
-  const stats: { label: string; value: string }[] = [
+  const fix = live.lastFix;
+  const fixIsFresh = fix !== null && now - fix.receivedAt < FIX_FRESH_MS;
+
+  // Real measurements replace the estimates one by one, wherever the aircraft
+  // actually reported them — a feed may carry a position but no altitude.
+  const stats: { label: string; value: string; live?: boolean }[] = [
     { label: 'Distance', value: `${Math.round(totalDistanceKm).toLocaleString()} km` },
     { label: 'Flown', value: `${Math.round(flownKm).toLocaleString()} km` },
     { label: 'To run', value: `${Math.round(remainingKm).toLocaleString()} km` },
-    { label: 'Avg ground speed', value: `${Math.round(averageSpeedKmh).toLocaleString()} km/h` },
-    { label: 'Track', value: `${Math.round(headingDeg)}°` },
-    {
-      label: 'Position',
-      value:
-        status === 'scheduled'
-          ? 'On the ground'
-          : `${position.lat.toFixed(2)}, ${position.lon.toFixed(2)}`,
-    },
+    fixIsFresh && fix.groundSpeedKmh !== undefined
+      ? { label: 'Ground speed', value: `${Math.round(fix.groundSpeedKmh).toLocaleString()} km/h`, live: true }
+      : { label: 'Avg ground speed', value: `${Math.round(averageSpeedKmh).toLocaleString()} km/h` },
+    fixIsFresh && fix.altitudeM !== undefined
+      ? { label: 'Altitude', value: `${Math.round(fix.altitudeM).toLocaleString()} m`, live: true }
+      : { label: 'Track', value: `${Math.round(headingDeg)}°` },
+    fix
+      ? { label: 'Position', value: `${fix.lat.toFixed(2)}, ${fix.lon.toFixed(2)}`, live: fixIsFresh }
+      : {
+          label: 'Position',
+          value: status === 'scheduled' ? 'On the ground' : `${position.lat.toFixed(2)}, ${position.lon.toFixed(2)}`,
+        },
   ];
 
   return (
@@ -200,6 +284,7 @@ function Stats({ progress }: { progress: FlightProgress }) {
           <div key={s.label}>
             <dt className="text-[10px] uppercase tracking-wide" style={{ color: UI_COLORS.heading }}>
               {s.label}
+              {s.live && <span style={{ color: UI_COLORS.accent }}> ·</span>}
             </dt>
             <dd className="text-sm text-neutral-200 tabular-nums">{s.value}</dd>
           </div>
@@ -209,8 +294,9 @@ function Stats({ progress }: { progress: FlightProgress }) {
           tracker that looked authoritative about a diverted flight would be
           worse than one that admits what it knows. */}
       <p className="mt-3 text-[11px] text-neutral-600 leading-snug">
-        Position is estimated from the schedule you entered — a great circle flown at a constant rate. It does not
-        account for actual routing, winds, holding or delays.
+        {fixIsFresh
+          ? 'Figures marked · are measured from the aircraft itself. The rest are worked out from the schedule you entered, along a direct route.'
+          : 'These are worked out from the schedule you entered — a direct route flown at a constant rate. They do not account for actual routing, winds, holding or delays.'}
       </p>
     </div>
   );

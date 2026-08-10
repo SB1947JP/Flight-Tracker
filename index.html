@@ -6,18 +6,22 @@
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <meta name="theme-color" content="#0a0a0a" />
     <!--
-      Everything this page needs, it ships with.
+      Exactly one outside connection, and it is named below.
 
-      There is no external origin in the policy below at all — no API, no font
-      host, no map tile server. The basemap is bundled coastline geometry
-      (src/coastline.ts) drawn as vector paths, and flights are entered by hand
-      and kept in localStorage. So the app has nowhere to send your itinerary
-      and nothing to fetch, which is also why it keeps working on a plane with
-      the wifi off.
+      `connect-src` allows api.adsb.lol and nothing else. That is the free
+      community network the live aircraft positions come from: the app sends it
+      a radio callsign and gets back a position. Nothing else leaves this page —
+      your flights are stored in this browser and are never uploaded, and there
+      is no analytics, font host or map tile server in the policy to send them
+      to.
 
-      The one exception is `style-src 'unsafe-inline'`, because React
-      `style={{…}}` props are inline style attributes. Styles only; it grants
-      no script execution.
+      The basemap is still bundled geometry (src/coastline.ts) rather than
+      fetched tiles, so everything except the live position keeps working with
+      no connection at all — which is the point on a plane, where the schedule
+      estimate is all anyone can have anyway.
+
+      `style-src 'unsafe-inline'` is here because React `style={{…}}` props are
+      inline style attributes. Styles only; it grants no script execution.
     -->
     <meta
       http-equiv="Content-Security-Policy"
@@ -25,7 +29,7 @@
                script-src 'self';
                style-src 'self' 'unsafe-inline';
                img-src 'self' data:;
-               connect-src 'self';
+               connect-src 'self' https://api.adsb.lol;
                object-src 'none';
                base-uri 'self';
                form-action 'none'"

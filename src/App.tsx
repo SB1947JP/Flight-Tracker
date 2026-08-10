@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ACCENT_BORDER, ACCENT_WASH, UI_COLORS } from './palette';
 import { Flight, STATUS_LABEL, loadFlights, resolveProgress, saveFlights } from './flights';
+import { useLive } from './useLive';
 import { FlightDetail } from './FlightDetail';
 import { FlightForm } from './FlightForm';
 import { formatDuration } from './time';
@@ -49,6 +50,11 @@ export default function App() {
     ordered.find((f) => f.departUtc > now) ??
     ordered[ordered.length - 1];
 
+  // Live tracking follows whatever is on screen, and only while it's flying —
+  // see `useLive` for why the polling is kept as narrow as it is.
+  const selectedProgress = selected ? resolveProgress(selected, now) : null;
+  const live = useLive(selected, selectedProgress?.status === 'enroute');
+
   const save = (flight: Flight) => {
     setFlights((current) => {
       const index = current.findIndex((f) => f.id === flight.id);
@@ -72,9 +78,9 @@ export default function App() {
         <h1 className="text-sm uppercase tracking-widest" style={{ color: UI_COLORS.heading }}>
           Flight tracker
         </h1>
-        {/* Says the quiet part out loud, where it will be read before anyone
-            trusts a number on this page: nothing here is a live feed. */}
-        <p className="text-xs text-neutral-600">Schedule-based · no live data</p>
+        {/* The per-flight bar says which of the two any given number is; this
+            just sets the expectation that both exist. */}
+        <p className="text-xs text-neutral-600">Live where there's coverage · schedule elsewhere</p>
       </header>
 
       <div className="flex-1 min-h-0 flex flex-col md:flex-row">
@@ -156,6 +162,7 @@ export default function App() {
             <FlightDetail
               flight={selected}
               now={now}
+              live={live}
               onEdit={() => setEditing({ mode: 'edit', flight: selected })}
               onDelete={() => remove(selected.id)}
             />
