@@ -22,11 +22,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      # `enablement: true` turns Pages on for the repository if it isn't
-      # already, so the site can go live without a visit to Settings.
+      # No `enablement: true` here. It asks GitHub to switch Pages on for the
+      # repository, which needs admin rights the Actions token doesn't have —
+      # it failed with "Resource not accessible by integration". Pages has to
+      # be turned on once by hand (Settings → Pages → Source: GitHub Actions);
+      # after that this step just reads the existing configuration.
       - uses: actions/configure-pages@v5
-        with:
-          enablement: true
       - run: npm ci
       - run: npm run build
       - uses: actions/upload-pages-artifact@v3
