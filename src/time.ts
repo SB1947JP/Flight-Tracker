@@ -89,3 +89,28 @@ export function formatDuration(ms: number): string {
   const minutes = totalMinutes % 60;
   return hours > 0 ? `${hours}h ${String(minutes).padStart(2, '0')}m` : `${minutes}m`;
 }
+
+/** The timezone this browser is set to, e.g. 'Asia/Tokyo'. */
+export function deviceZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+
+/**
+ * The same instant on the reader's own clock, e.g. "Tue 11 Aug, 06:35".
+ *
+ * Shown beside every airport-local time. Entering times in each airport's local
+ * time is right — it is what a ticket prints — but it is also the single
+ * easiest thing to get wrong, because nothing on screen contradicts you if you
+ * type your own time instead. Echoing the instant back in the reader's zone
+ * makes a mistake visible immediately rather than eight hours later.
+ */
+export function formatInDeviceZone(utc: number): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(utc);
+}

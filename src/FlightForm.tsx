@@ -2,7 +2,7 @@ import { FormEvent, useMemo, useState } from 'react';
 import { ACCENT_BORDER, ACCENT_WASH, UI_COLORS } from './palette';
 import { Airport, findAirport, searchAirports } from './airports';
 import { Flight, newFlightId } from './flights';
-import { formatDuration, utcToZonedWallClock, zonedWallClockToUtc } from './time';
+import { deviceZone, formatDuration, formatInDeviceZone, utcToZonedWallClock, zonedWallClockToUtc } from './time';
 
 /**
  * Add/edit form for a flight.
@@ -103,6 +103,51 @@ function AirportField({
   );
 }
 
+/**
+ * A time field that says what it just understood.
+ *
+ * The label alone ("Departs (SYD local)") was not enough: it describes the rule
+ * without showing the consequence, so someone who types their own time instead
+ * of the airport's gets no signal at all until every figure on the next screen
+ * is hours out. The echo underneath states the same instant on the reader's own
+ * clock, where a mistake is obvious at once.
+ */
+function TimeField({
+  id,
+  label,
+  airport,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  airport: Airport | undefined;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const utc = airport && value ? zonedWallClockToUtc(value, airport.tz) : NaN;
+  // No point telling someone in Sydney that 09:35 in Sydney is 09:35 for them.
+  const showEcho = Number.isFinite(utc) && airport !== undefined && airport.tz !== deviceZone();
+
+  return (
+    <div>
+      <label htmlFor={id} className={labelClass} style={{ color: UI_COLORS.heading }}>
+        {label} {airport ? `— ${airport.iata} local time` : ''}
+      </label>
+      <input
+        id={id}
+        type="datetime-local"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={inputClass}
+      />
+      <div className="mt-1 text-[11px] leading-tight min-h-[1.25rem] text-neutral-500">
+        {showEcho && <>That is {formatInDeviceZone(utc)} where you are.</>}
+      </div>
+    </div>
+  );
+}
+
 export function FlightForm({
   existing,
   onSave,
@@ -184,38 +229,30 @@ export function FlightForm({
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label htmlFor="flight-depart" className={labelClass} style={{ color: UI_COLORS.heading }}>
-            Departs {origin ? `(${origin.iata} local)` : '(local)'}
-          </label>
-          <input
-            id="flight-depart"
-            type="datetime-local"
-            value={departLocal}
-            onChange={(e) => setDepartLocal(e.target.value)}
-            className={inputClass}
-          />
-        </div>
-        <div>
-          <label htmlFor="flight-arrive" className={labelClass} style={{ color: UI_COLORS.heading }}>
-            Arrives {destination ? `(${destination.iata} local)` : '(local)'}
-          </label>
-          <input
-            id="flight-arrive"
-            type="datetime-local"
-            value={arriveLocal}
-            onChange={(e) => setArriveLocal(e.target.value)}
-            className={inputClass}
-          />
-        </div>
+        <TimeField
+          id="flight-depart"
+          label="Departs"
+          airport={origin}
+          value={departLocal}
+          onChange={setDepartLocal}
+        />
+        <TimeField
+          id="flight-arrive"
+          label="Arrives"
+          airport={destination}
+          value={arriveLocal}
+          onChange={setArriveLocal}
+        />
       </div>
 
       <p className="text-[11px] text-neutral-500 leading-snug -mt-2">
-        Times are as printed on the ticket — each one in its own airport&rsquo;s local time.
+        Enter the times exactly as printed on the ticket — each one is the time on the clock{' '}
+        <em className="not-italic text-neutral-300">at that airport</em>, not on yours.
         {previewDuration !== null && (
           <>
             {' '}
-            Block time <span className="text-neutral-300 tabular-nums">{formatDuration(previewDuration)}</span>.
+            That makes the flight{' '}
+            <span className="text-neutral-300 tabular-nums">{formatDuration(previewDuration)}</span> long.
           </>
         )}
       </p>

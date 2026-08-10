@@ -1,7 +1,7 @@
 import { ACCENT_BORDER, ACCENT_WASH, UI_COLORS } from './palette';
 import { Flight, FlightProgress, PHASE_LABEL, STATUS_LABEL, resolveProgress } from './flights';
 import { RouteMap } from './RouteMap';
-import { formatClock, formatDate, formatDuration, formatZoneAbbr } from './time';
+import { deviceZone, formatClock, formatDate, formatDuration, formatInDeviceZone, formatZoneAbbr } from './time';
 import { FIX_FRESH_MS, LiveState } from './useLive';
 
 /** The tracking view for one flight: where it is, and when it gets there. */
@@ -122,6 +122,7 @@ function Timeline({ flight, progress, now }: { flight: Flight; progress: FlightP
           clock={formatClock(flight.departUtc, origin.tz)}
           date={formatDate(flight.departUtc, origin.tz)}
           zone={formatZoneAbbr(flight.departUtc, origin.tz)}
+          yours={origin.tz === deviceZone() ? undefined : formatInDeviceZone(flight.departUtc)}
         />
         <div className="text-center pb-0.5">
           <div className="text-neutral-200 tabular-nums">{headline}</div>
@@ -134,6 +135,7 @@ function Timeline({ flight, progress, now }: { flight: Flight; progress: FlightP
           clock={formatClock(flight.arriveUtc, destination.tz)}
           date={formatDate(flight.arriveUtc, destination.tz)}
           zone={formatZoneAbbr(flight.arriveUtc, destination.tz)}
+          yours={destination.tz === deviceZone() ? undefined : formatInDeviceZone(flight.arriveUtc)}
           alignRight
         />
       </div>
@@ -229,12 +231,15 @@ function Endpoint({
   clock,
   date,
   zone,
+  yours,
   alignRight,
 }: {
   iata: string;
   clock: string;
   date: string;
   zone: string;
+  /** The same moment on the reader's own clock, when that differs. */
+  yours?: string;
   alignRight?: boolean;
 }) {
   return (
@@ -248,6 +253,9 @@ function Endpoint({
       <div className="text-[11px] text-neutral-500 tabular-nums whitespace-nowrap">
         {date} · {zone}
       </div>
+      {/* The same instant where the reader is, so a time entered in the wrong
+          zone shows up here rather than as a silently wrong countdown. */}
+      {yours && <div className="text-[11px] text-neutral-600 tabular-nums whitespace-nowrap">{yours} your time</div>}
     </div>
   );
 }
