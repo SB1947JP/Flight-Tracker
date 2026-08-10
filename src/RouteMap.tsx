@@ -40,9 +40,42 @@ import { FlightProgress } from './flights';
  * Curves at the nose and tail, straight swept edges through the wings — which is
  * what makes it read as an aeroplane at 20 pixels rather than as an arrowhead.
  *
- * Modelled on the aeroplane glyph a phone shows for flight mode: a long tapered
- * nose, hard-swept wings ending in points, and a swept tail cut straight across
- * the back. The tail went through a notched version first, which is faithful to
+ * A tapered nose, wings almost square to the fuselage, and a small swept tail
+ * cut straight across the back.
+ *
+ * The wings are the one place this departs from the aeroplane glyph a phone
+ * shows for flight mode, and it is a deliberate departure. That glyph has
+ * dramatically swept wings, and it can afford them because it is only ever
+ * drawn at one angle. A map marker turns to face its heading, and under
+ * rotation heavy sweep is ruinous: the two wings end up at completely different
+ * apparent angles, the long nose starts reading as a tail, and somewhere around
+ * 120-150 degrees the whole thing stops being an aeroplane and becomes a star.
+ * Square wings give the same silhouette at every heading. Legibility at all
+ * 360 degrees beats fidelity to a static icon.
+ *
+ * Two proportions here exist because of *rotation*, which is the thing that
+ * makes a map marker hard and that judging it upright completely hides.
+ *
+ * The tailplane is small and set back, with a clear run of fuselage between it
+ * and the wing. An earlier version had a tail nearly as wide as the wings and
+ * immediately behind them; the deep V trapped between the two read as a star
+ * rather than an aircraft the moment the marker turned away from vertical.
+ *
+ * The nose is long. It is the only thing distinguishing front from back on a
+ * shape that is otherwise near-symmetric, and without that asymmetry a marker
+ * pointing down the screen — a southbound flight, which is half of them — stops
+ * looking like an aeroplane at all.
+ *
+ * Everything is thicker than a drawing wants, because a 0.75 outline is drawn
+ * on both sides of every edge and therefore eats about 1.5 units out of any
+ * section it borders. A wing tip 3 units deep has essentially no fill left; it
+ * renders as two white lines and the aircraft reads as a star. Nothing here is
+ * thinner than 5.
+ *
+ * Candidates were compared side by side at the size the marker actually draws
+ * AND at ten times that, at headings of 0, 60, 90, 120, 150 and 210. Every
+ * earlier version passed inspection upright and failed at 150 — which is worth
+ * remembering before adjusting any of these numbers. The tail went through a notched version first, which is faithful to
  * the glyph at poster size and at twenty-two pixels reads as jagged — a cluster
  * of spikes with a separate tailplane, a letter W once the notch was deepened.
  * A flat trailing edge says "tail" at this size with none of that noise. That
@@ -53,22 +86,22 @@ import { FlightProgress } from './flights';
  * two white lines with a sliver of colour between them.
  */
 const PLANE_PATH = [
-  'M0 -16',
-  'C1.0 -15.2 2.3 -11.6 2.4 -7.0', // long tapered nose
-  'L2.4 -4.4',
-  'L13.4 4.5', // wing leading edge, swept hard back to a point
-  'L13.4 7.2', // wing tip
-  'L2.4 3.1', // trailing edge, back to the root
-  'L2.4 7.4',
-  'L5.7 14.2', // tail, swept back
-  'L-5.7 14.2', // straight across the back — no notch
-  'L-2.4 7.4',
-  'L-2.4 3.1',
-  'L-13.4 7.2',
-  'L-13.4 4.5',
-  'L-2.4 -4.4',
-  'L-2.4 -7.0',
-  'C-2.3 -11.6 -1.0 -15.2 0 -16',
+  'M0 -17',
+  'C1.7 -15.5 3.6 -10.6 3.7 -5.4', // long nose — the shape's one asymmetry
+  'L3.7 -1.8',
+  'L13.6 -1.0', // wings run almost square to the fuselage — see above
+  'L13.6 4.4', // wing tip, deep enough to survive the outline
+  'L3.7 5.0', // trailing edge, meeting the body without a pinch
+  'L3.7 9.6',
+  'L7.0 13.8', // small tailplane, swept
+  'L-7.0 13.8', // straight across the back
+  'L-3.7 9.6',
+  'L-3.7 5.0',
+  'L-13.6 4.4',
+  'L-13.6 -1.0',
+  'L-3.7 -1.8',
+  'L-3.7 -5.4',
+  'C-3.6 -10.6 -1.7 -15.5 0 -17',
   'Z',
 ].join(' ');
 
@@ -468,7 +501,7 @@ export function RouteMap({
           )}
 
           {(livePosition || (progress && progress.status !== 'scheduled')) && (
-            <g transform={`translate(${planePx.left} ${planePx.top}) rotate(${planeHeading}) scale(0.85)`}>
+            <g transform={`translate(${planePx.left} ${planePx.top}) rotate(${planeHeading}) scale(1.05)`}>
               {/* A slim swept-wing silhouette in the manner of the aeroplane
                   glyph on a phone's status bar, rather than the blunt
                   straight-edged shape this started as. Drawn nose-up, so the
@@ -481,7 +514,7 @@ export function RouteMap({
                 d={PLANE_PATH}
                 fill={UI_COLORS.danger}
                 stroke="#fafafa"
-                strokeWidth={0.9}
+                strokeWidth={0.75}
                 strokeLinejoin="round"
                 strokeLinecap="round"
               />
