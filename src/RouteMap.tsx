@@ -53,10 +53,12 @@ import { FlightProgress } from './flights';
  * enough landmarks to find the aircraft's axis at any angle, which is why the
  * tracking sites all draw it this way.
  *
- * The outline is dark rather than white. Over map tiles darkened to half
- * brightness a dark line stays crisp against pale sea, pale land and dark
- * city alike, where a white one bulks the shape out and blurs its edges.
- * Checked over all three.
+ * Yellow with a dark outline, which is what every flight tracker uses and is
+ * therefore the pairing people already read as "the aeroplane". It is also the
+ * combination that holds up over map tiles darkened to half brightness: the
+ * yellow separates from pale sea, pale land and dark city alike, and a dark
+ * line stays crisp on all three where a white one bulks the shape out and
+ * blurs its edges. Checked over all three.
  *
  * Two proportions here exist because of *rotation*, which is the thing that
  * makes a map marker hard and that judging it upright completely hides.
@@ -578,7 +580,7 @@ export function RouteMap({
           {(livePosition || (progress && progress.status !== 'scheduled')) && (
             <g
               transform={`translate(${planePx.left} ${planePx.top}) rotate(${planeHeading}) scale(0.95)`}
-              fill={UI_COLORS.danger}
+              fill={UI_COLORS.aircraft}
               stroke="#141414"
               strokeWidth={0.9}
               strokeLinejoin="round"

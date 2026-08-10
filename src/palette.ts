@@ -10,8 +10,16 @@
 export const UI_COLORS = {
   /** Active, selected or otherwise live controls (neutral-200). */
   accent: '#e4e4e7',
-  /** The aircraft marker — red as cartographic convention, not as a warning. */
+  /** Destructive actions — Remove, and the like. */
   danger: '#A15C56',
+  /** The aircraft itself.
+   *
+   *  This is the one saturated colour in the interface, and it is spent here
+   *  deliberately. Every flight tracker draws its aircraft in this yellow, so
+   *  it is the colour people already read as "the aeroplane" — and on a map
+   *  darkened to half brightness it is the hue that survives against pale sea,
+   *  pale land and dark city alike. Nothing else should borrow it. */
+  aircraft: '#EFC93F',
   /** Section titles and other structural labels (neutral-400). */
   heading: '#a1a1aa',
   /** Inactive borders and tracks (neutral-600). */
