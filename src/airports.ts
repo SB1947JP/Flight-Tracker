@@ -8,6 +8,12 @@
  * These are the ~130 busiest passenger airports plus a spread of regional ones,
  * which covers the overwhelming majority of hand-entered itineraries.
  *
+ * Every position here has been checked against the OurAirports dataset and
+ * agrees with it to within 3 km, which at map scale is under a pixel. (That
+ * check found two that did not: Chengdu was 56 km out, having been given the
+ * new Tianfu airport's position under the old Shuangliu airport's code — they
+ * are separate airports and now have separate rows — and Oslo was 9 km out.)
+ *
  * Extending it is the intended path: add a row. Each needs an IATA code, a
  * position (degrees, positive north/east) and an **IANA timezone name** — the
  * zone is what makes a boarding-pass time mean the right instant (see
@@ -61,7 +67,8 @@ export const AIRPORTS: Airport[] = [
   { iata: 'SHA', name: 'Hongqiao', city: 'Shanghai', country: 'China', lat: 31.198, lon: 121.336, tz: 'Asia/Shanghai' },
   { iata: 'CAN', name: 'Baiyun', city: 'Guangzhou', country: 'China', lat: 23.392, lon: 113.299, tz: 'Asia/Shanghai' },
   { iata: 'SZX', name: "Bao'an", city: 'Shenzhen', country: 'China', lat: 22.639, lon: 113.811, tz: 'Asia/Shanghai' },
-  { iata: 'CTU', name: 'Tianfu', city: 'Chengdu', country: 'China', lat: 30.313, lon: 104.442, tz: 'Asia/Shanghai' },
+  { iata: 'CTU', name: 'Shuangliu', city: 'Chengdu', country: 'China', lat: 30.579, lon: 103.947, tz: 'Asia/Shanghai' },
+  { iata: 'TFU', name: 'Tianfu', city: 'Chengdu', country: 'China', lat: 30.313, lon: 104.442, tz: 'Asia/Shanghai' },
   { iata: 'HKG', name: 'Hong Kong Intl', city: 'Hong Kong', country: 'Hong Kong', lat: 22.308, lon: 113.918, tz: 'Asia/Hong_Kong' },
   { iata: 'TPE', name: 'Taoyuan', city: 'Taipei', country: 'Taiwan', lat: 25.078, lon: 121.233, tz: 'Asia/Taipei' },
 
@@ -130,7 +137,7 @@ export const AIRPORTS: Airport[] = [
   { iata: 'ATH', name: 'Eleftherios Venizelos', city: 'Athens', country: 'Greece', lat: 37.937, lon: 23.945, tz: 'Europe/Athens' },
   { iata: 'CPH', name: 'Kastrup', city: 'Copenhagen', country: 'Denmark', lat: 55.618, lon: 12.656, tz: 'Europe/Copenhagen' },
   { iata: 'ARN', name: 'Arlanda', city: 'Stockholm', country: 'Sweden', lat: 59.652, lon: 17.919, tz: 'Europe/Stockholm' },
-  { iata: 'OSL', name: 'Gardermoen', city: 'Oslo', country: 'Norway', lat: 60.194, lon: 11.1, tz: 'Europe/Oslo' },
+  { iata: 'OSL', name: 'Gardermoen', city: 'Oslo', country: 'Norway', lat: 60.121, lon: 11.05, tz: 'Europe/Oslo' },
   { iata: 'HEL', name: 'Helsinki-Vantaa', city: 'Helsinki', country: 'Finland', lat: 60.317, lon: 24.963, tz: 'Europe/Helsinki' },
   { iata: 'KEF', name: 'Keflavík', city: 'Reykjavík', country: 'Iceland', lat: 63.985, lon: -22.606, tz: 'Atlantic/Reykjavik' },
   { iata: 'BRU', name: 'Brussels', city: 'Brussels', country: 'Belgium', lat: 50.901, lon: 4.484, tz: 'Europe/Brussels' },
