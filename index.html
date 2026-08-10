@@ -8,9 +8,10 @@
     <!--
       Exactly one outside connection, and it is named below.
 
-      `connect-src` allows api.adsb.lol and nothing else. That is the free
-      community network the live aircraft positions come from: the app sends it
-      a radio callsign and gets back a position. Nothing else leaves this page —
+      `connect-src` allows three community flight-tracking networks and nothing
+      else. They are where the live aircraft positions come from: the app sends
+      one a radio callsign and gets back a position, and tries the next if that
+      one doesn't answer. Nothing else leaves this page —
       your flights are stored in this browser and are never uploaded, and there
       is no analytics, font host or map tile server in the policy to send them
       to.
@@ -29,7 +30,7 @@
                script-src 'self';
                style-src 'self' 'unsafe-inline';
                img-src 'self' data:;
-               connect-src 'self' https://api.adsb.lol;
+               connect-src 'self' https://api.adsb.lol https://opendata.adsb.fi https://api.airplanes.live;
                object-src 'none';
                base-uri 'self';
                form-action 'none'"

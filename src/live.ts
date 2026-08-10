@@ -1,9 +1,9 @@
 /**
  * Live aircraft positions.
  *
- * Source is adsb.lol, a free community network: volunteers run receivers that
- * pick up the position aircraft broadcast continuously (ADS-B), and pool them.
- * No account, no key, no cost.
+ * Sources are free community networks — adsb.lol, adsb.fi, airplanes.live —
+ * where volunteers run receivers that pick up the position aircraft broadcast
+ * continuously (ADS-B) and pool them. No account, no key, no cost.
  *
  * The consequence of "volunteers on the ground" is the thing to understand
  * about this whole feature: **coverage follows people, not aeroplanes.** Over
@@ -25,7 +25,43 @@
  * ---------------------------------------------------------------------------
  */
 
-const ENDPOINT = 'https://api.adsb.lol/v2/callsign';
+/**
+ * Three community networks, tried in order.
+ *
+ * They all run the same open server software and answer the same shape, so
+ * accepting whichever one replies costs nothing and removes a single point of
+ * failure. That matters more than usual here: a browser cannot tell you *why* a
+ * request failed — a service refusing cross-origin requests, a tracker blocker
+ * eating it, a captive wifi portal and being genuinely offline all arrive as
+ * the same empty error — so the only way to distinguish "this service won't
+ * talk to browsers" from "this device has no connection" is to ask more than
+ * one and see whether they all fail.
+ *
+ * The one that answered last is remembered and tried first, so the steady state
+ * is a single request per poll.
+ */
+const ENDPOINTS = [
+  { name: 'adsb.lol', url: (cs: string) => `https://api.adsb.lol/v2/callsign/${cs}` },
+  { name: 'adsb.fi', url: (cs: string) => `https://opendata.adsb.fi/api/v2/callsign/${cs}` },
+  { name: 'airplanes.live', url: (cs: string) => `https://api.airplanes.live/v2/callsign/${cs}` },
+];
+
+/** The last service that answered, tried first next time. */
+let preferred = 0;
+
+/**
+ * Whether the browser's own security policy blocked one of these requests.
+ *
+ * A policy refusal is indistinguishable from a network failure to the code that
+ * made the request, but the browser announces it separately — so listening for
+ * that announcement is the only way to tell a user which of the two happened.
+ */
+let cspBlocked = false;
+if (typeof document !== 'undefined') {
+  document.addEventListener('securitypolicyviolation', (event) => {
+    if (event.violatedDirective.startsWith('connect-src')) cspBlocked = true;
+  });
+}
 
 /** Knots → km/h, and feet → metres. The feed speaks aviation units. */
 const KMH_PER_KNOT = 1.852;
@@ -73,27 +109,51 @@ function num(source: Record<string, unknown>, ...keys: string[]): number | undef
  * different flight, so a slow reply can't overwrite a newer one.
  */
 export async function fetchLivePosition(callsign: string, signal?: AbortSignal): Promise<LiveResult> {
+  const encoded = encodeURIComponent(callsign);
+  const failures: string[] = [];
   let payload: unknown;
-  try {
-    const response = await fetch(`${ENDPOINT}/${encodeURIComponent(callsign)}`, {
-      signal,
-      headers: { Accept: 'application/json' },
-    });
-    if (!response.ok) {
-      return { state: 'error', message: `The flight service replied ${response.status}.` };
+  let answered = '';
+
+  // Start with whichever service worked last, then the rest.
+  const order = ENDPOINTS.map((_, i) => ENDPOINTS[(preferred + i) % ENDPOINTS.length]);
+
+  for (const endpoint of order) {
+    try {
+      const response = await fetch(endpoint.url(encoded), { signal, headers: { Accept: 'application/json' } });
+      if (!response.ok) {
+        failures.push(`${endpoint.name} replied ${response.status}`);
+        continue;
+      }
+      payload = await response.json();
+      answered = endpoint.name;
+      preferred = ENDPOINTS.indexOf(endpoint);
+      break;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return { state: 'error', message: 'cancelled' };
+      }
+      failures.push(`${endpoint.name} unreachable`);
     }
-    payload = await response.json();
-  } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') {
-      return { state: 'error', message: 'cancelled' };
+  }
+
+  if (!answered) {
+    // Every service failed. Say which, and name the causes worth checking —
+    // "check your connection" is useless advice on a device whose connection is
+    // demonstrably fine, which is the usual case when a blocker is the culprit.
+    if (cspBlocked) {
+      return {
+        state: 'error',
+        message: "This page's own security policy blocked the request — that's a bug in the app, not your device.",
+      };
     }
-    // Offline, blocked, or the service is down — indistinguishable from here,
-    // and the user's next move is the same in every case.
-    return { state: 'error', message: 'Could not reach the flight service. Check your connection.' };
+    return {
+      state: 'error',
+      message: `Couldn't reach any flight service (${failures.join(', ')}). If other sites work, a tracker/ad blocker or a private-relay setting is the usual cause — try another browser to check.`,
+    };
   }
 
   if (typeof payload !== 'object' || payload === null) {
-    return { state: 'error', message: 'The flight service sent something unreadable.' };
+    return { state: 'error', message: `${answered} sent something unreadable.` };
   }
 
   // Aircraft have lived under `ac` and under `aircraft` in different versions
@@ -110,8 +170,8 @@ export async function fetchLivePosition(callsign: string, signal?: AbortSignal):
   if (!list) {
     // Log the actual payload: this is the one failure a user can't diagnose
     // from the interface, and it is exactly what a maintainer needs to see.
-    console.warn('Unrecognised response from the flight service:', payload);
-    return { state: 'error', message: "The flight service's reply wasn't in the expected format." };
+    console.warn(`Unrecognised response from ${answered}:`, payload);
+    return { state: 'error', message: `${answered} replied in a format this app doesn't recognise.` };
   }
   if (list.length === 0) return { state: 'not-found' };
 

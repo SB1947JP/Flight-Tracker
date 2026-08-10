@@ -6,7 +6,7 @@ That is the whole requirement — no airports, no times. Add the schedule as wel
 
 ## Coverage, and why it comes and goes
 
-Live positions come from [adsb.lol](https://adsb.lol), a free community network: volunteers run receivers that pick up the position aircraft broadcast continuously (ADS-B), and pool them. No account, no key, no cost.
+Live positions come from free community networks — [adsb.lol](https://adsb.lol), [adsb.fi](https://adsb.fi) and [airplanes.live](https://airplanes.live) — where volunteers run receivers that pick up the position aircraft broadcast continuously (ADS-B) and pool them. No account, no key, no cost. All three are asked in turn until one answers, and the one that answered is tried first next time, so the steady state is a single request per poll.
 
 The consequence of "volunteers on the ground" is the thing to understand about the whole feature: **coverage follows people, not aeroplanes.** Over Europe, North America, Japan and eastern Australia it is excellent. In the middle of an ocean there is nobody to hear the broadcast, so a long-haul flight goes quiet for hours. Filling those gaps needs satellite reception, which is a paid service.
 
@@ -14,7 +14,7 @@ So a gap is the normal condition, not a fault. When the signal drops the app kee
 
 ## The three decisions worth knowing
 
-**Exactly one outside connection.** The Content-Security-Policy in `index.html` allows `api.adsb.lol` and nothing else — no analytics, no font host, no map tile server. Your flights stay in this browser and are never uploaded; the only thing sent out is a radio callsign. The basemap is bundled coastline geometry (`src/coastline.ts`, Natural Earth 110m, public domain) drawn as vector paths rather than fetched tiles, so everything except the live position still works with no connection at all — which matters on a plane, where the schedule estimate is all anyone can have anyway.
+**Only the flight lookups leave this page.** The Content-Security-Policy in `index.html` allows the three flight networks and nothing else — no analytics, no font host, no map tile server. Your flights stay in this browser and are never uploaded; the only thing sent out is a radio callsign. The basemap is bundled coastline geometry (`src/coastline.ts`, Natural Earth 110m, public domain) drawn as vector paths rather than fetched tiles, so everything except the live position still works with no connection at all — which matters on a plane, where the schedule estimate is all anyone can have anyway.
 
 **A flight number is enough.** The schedule is optional throughout: `Flight` carries its four schedule fields as all-or-nothing (`hasSchedule`), `resolveProgress` returns null without them, and the map, the statistics and the polling all adapt rather than requiring them. Flights saved before this was true load unchanged.
 
