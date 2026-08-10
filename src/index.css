@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  height: 100%;
+  /* Stop a drag on the map from rubber-banding into the page and triggering
+     iOS/Android pull-to-refresh, which would reload and lose your place. */
+  overscroll-behavior: none;
+}
+
+/* Scales every rem-based Tailwind text utility down proportionally, app-wide,
+   rather than editing each component's size class. */
+html {
+  font-size: 14px;
+}

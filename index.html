@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <meta name="theme-color" content="#0a0a0a" />
+    <!--
+      Everything this page needs, it ships with.
+
+      There is no external origin in the policy below at all — no API, no font
+      host, no map tile server. The basemap is bundled coastline geometry
+      (src/coastline.ts) drawn as vector paths, and flights are entered by hand
+      and kept in localStorage. So the app has nowhere to send your itinerary
+      and nothing to fetch, which is also why it keeps working on a plane with
+      the wifi off.
+
+      The one exception is `style-src 'unsafe-inline'`, because React
+      `style={{…}}` props are inline style attributes. Styles only; it grants
+      no script execution.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self';
+               script-src 'self';
+               style-src 'self' 'unsafe-inline';
+               img-src 'self' data:;
+               connect-src 'self';
+               object-src 'none';
+               base-uri 'self';
+               form-action 'none'"
+    />
+    <title>Flight Tracker</title>
+  </head>
+  <body class="bg-neutral-950 text-neutral-100">
+    <div id="root" class="h-full"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
