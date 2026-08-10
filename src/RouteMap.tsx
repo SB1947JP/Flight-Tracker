@@ -12,13 +12,20 @@ import { FlightProgress } from './flights';
  * projecting some polygons and a path, and Leaflet would add a dependency, a
  * stylesheet and marker assets to do it.
  *
- * The basemap is bundled coastline geometry drawn as SVG paths, *not* raster
- * tiles from a tile server. Tiles look better — they carry place names and
- * terrain — but they cost a third-party origin in the CSP, an attribution
- * requirement, and a live connection. Trading them for 28 KB of gzipped
- * coastline buys an app with no external requests at all, which still draws
- * your route at 38,000 feet with the wifi off. For a flight tracker that seems
- * like the better side of the trade.
+ * The basemap is two layers, and which one you see depends on your connection.
+ *
+ * On top: OpenStreetMap raster tiles — coastlines that actually look like
+ * coastlines, plus place names and terrain. Underneath, and drawn first: the
+ * bundled 110m coastline as vector paths. When the tiles load they cover it
+ * completely; when they can't — offline, at altitude, behind a blocker — the
+ * drawn outline is still there and the route is still legible.
+ *
+ * The tiles were removed once, on the reasoning that a self-contained app with
+ * no external requests was worth a coarse map. That reasoning expired: the app
+ * now fetches live aircraft positions, so it already needs a connection for the
+ * thing it exists to do, and the coarse outline was buying an offline purity
+ * the app no longer has. It survives as a fallback, which is what it was always
+ * actually good for.
  *
  * `TILE_SIZE` survives as the projection's scale constant: Web Mercator tile
  * coordinates are defined in 256-pixel tiles, and keeping that unit means the
@@ -27,7 +34,8 @@ import { FlightProgress } from './flights';
 
 const TILE_SIZE = 256;
 const MIN_ZOOM = 1;
-const MAX_ZOOM = 12;
+/** Tiles are served to z19; past ~16 a route map has nothing left to say. */
+const MAX_ZOOM = 16;
 /** Great circles are sampled, not drawn straight — see `samplePath`. */
 const PATH_SEGMENTS = 128;
 
@@ -151,16 +159,13 @@ export function RouteMap({
     const usableW = Math.max(64, width - padding * 2);
     const usableH = Math.max(64, height - padding * 2);
     // A single point has no extent, so a fitted zoom would run to the maximum.
-    // Zoom 5 instead: enough to show which country an aircraft is over, and no
-    // closer than the bundled 110m coastline can honestly support — finer data
-    // exists but costs ten times the download and sixty thousand points to
-    // reproject, for detail a position marker doesn't need.
+    // Zoom 7 shows the region an aircraft is over with the towns named.
     const zoom = progress
       ? Math.max(
           MIN_ZOOM,
           Math.min(MAX_ZOOM, Math.floor(Math.log2(Math.min(usableW / (spanX * TILE_SIZE), usableH / (spanY * TILE_SIZE))))),
         )
-      : 5;
+      : 7;
     const scale = 2 ** zoom;
     setView({ zoom, x: ((minX + maxX) / 2) * scale, y: ((minY + maxY) / 2) * scale });
   }, [fullPath, size, progress]);
@@ -268,6 +273,33 @@ export function RouteMap({
   // applied as a cheap <g> translate rather than by rebuilding the geometry.
   const landPath = useMemo(() => (view ? coastlinePath(zoom) : ''), [view, zoom]);
 
+  const tiles: { key: string; url: string; left: number; top: number }[] = [];
+  if (view && width > 0 && height > 0) {
+    const world = 2 ** zoom;
+    const firstX = Math.floor(view.x - width / 2 / TILE_SIZE);
+    const firstY = Math.floor(view.y - height / 2 / TILE_SIZE);
+    const cols = Math.ceil(width / TILE_SIZE) + 1;
+    const rows = Math.ceil(height / TILE_SIZE) + 1;
+    for (let i = 0; i <= cols; i++) {
+      for (let j = 0; j <= rows; j++) {
+        const tx = firstX + i;
+        const ty = firstY + j;
+        // Latitude doesn't wrap — above or below the world there is simply no
+        // tile, so those slots stay empty rather than requesting a 404.
+        if (ty < 0 || ty >= world) continue;
+        // Longitude does wrap, so panning past the antimeridian continues into
+        // the other side of the world instead of hitting a void.
+        const wrappedX = ((tx % world) + world) % world;
+        tiles.push({
+          key: `${zoom}/${tx}/${ty}`,
+          url: `https://tile.openstreetmap.org/${zoom}/${wrappedX}/${ty}.png`,
+          left: (tx - view.x) * TILE_SIZE + width / 2,
+          top: (ty - view.y) * TILE_SIZE + height / 2,
+        });
+      }
+    }
+  }
+
   return (
     <div
       ref={containerRef}
@@ -277,6 +309,57 @@ export function RouteMap({
       onPointerCancel={endDrag}
       className="relative w-full h-full min-h-[16rem] overflow-hidden rounded border border-neutral-700 bg-neutral-950 cursor-grab active:cursor-grabbing touch-none select-none"
     >
+      {/* Fallback layer, drawn first and covered by the tiles when they load. */}
+      {view && width > 0 && (
+        <svg className="absolute inset-0 pointer-events-none" width={width} height={height} aria-hidden="true">
+          <g transform={`translate(${width / 2} ${height / 2}) scale(${TILE_SIZE}) translate(${-view.x} ${-view.y})`}>
+            <path
+              d={landPath}
+              fill={UI_COLORS.land}
+              stroke={UI_COLORS.coast}
+              strokeWidth={1 / TILE_SIZE}
+              fillRule="nonzero"
+            />
+          </g>
+        </svg>
+      )}
+
+      {tiles.map((t) => (
+        <img
+          key={t.key}
+          src={t.url}
+          alt=""
+          aria-hidden="true"
+          draggable={false}
+          loading="lazy"
+          // Don't hand this app's URL to the tile host with every request.
+          referrerPolicy="no-referrer"
+          width={TILE_SIZE}
+          height={TILE_SIZE}
+          // Darkened and desaturated rather than made transparent: the route and
+          // the aircraft have to stay the brightest things on the map, and any
+          // transparency here would let the fallback coastline show through.
+          // A tile that fails to load draws the browser's broken-image marker
+          // and a faint box, which litters the fallback coastline with debris
+          // exactly when the connection is worst. Hide it and let the drawn
+          // outline underneath do its job.
+          onError={(e) => {
+            e.currentTarget.style.visibility = 'hidden';
+          }}
+          onLoad={(e) => {
+            e.currentTarget.style.visibility = 'visible';
+          }}
+          className="absolute max-w-none pointer-events-none"
+          style={{
+            left: t.left,
+            top: t.top,
+            width: TILE_SIZE,
+            height: TILE_SIZE,
+            filter: 'brightness(0.5) saturate(0.55) contrast(1.1)',
+          }}
+        />
+      ))}
+
       {view && width > 0 && (
         <svg
           className="absolute inset-0 pointer-events-none"
@@ -286,24 +369,6 @@ export function RouteMap({
             progress ? `Route from ${progress.origin.iata} to ${progress.destination.iata}` : 'Aircraft position'
           }
         >
-          {/* The basemap. Geometry is in tile coordinates, so the whole layer
-              is positioned by one transform: scale tiles→pixels, then translate
-              by the pan. Panning therefore costs a matrix update, not 5,000
-              reprojected points. */}
-          <g
-            transform={`translate(${width / 2} ${height / 2}) scale(${TILE_SIZE}) translate(${-view.x} ${-view.y})`}
-          >
-            <path
-              d={landPath}
-              fill={UI_COLORS.land}
-              stroke={UI_COLORS.coast}
-              // Strokes scale with the transform, so the width has to be
-              // divided back out to stay a hairline at every zoom.
-              strokeWidth={1 / TILE_SIZE}
-              fillRule="nonzero"
-            />
-          </g>
-
           {/* Remaining leg: dashed, so "not yet flown" reads at a glance
               without needing a second colour. */}
           {progress && <polyline
@@ -405,12 +470,17 @@ export function RouteMap({
         </button>
       </div>
 
-      {/* Natural Earth is public domain and asks for no attribution, but
-          crediting the map you're standing on is good manners. Plain text, not
-          a link: an outbound link is the one thing on this page that would
-          take you somewhere else. */}
-      <div className="absolute bottom-0 right-0 px-1 text-[9px] leading-tight bg-neutral-950/75 text-neutral-500">
-        Coastline: Natural Earth
+      {/* OpenStreetMap's tile usage policy requires visible attribution. */}
+      <div className="absolute bottom-0 right-0 px-1 text-[9px] leading-tight bg-neutral-950/75 text-neutral-400">
+        ©{' '}
+        <a
+          href="https://www.openstreetmap.org/copyright"
+          target="_blank"
+          rel="noreferrer noopener"
+          className="underline hover:text-neutral-200"
+        >
+          OpenStreetMap
+        </a>
       </div>
     </div>
   );

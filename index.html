@@ -16,10 +16,11 @@
       is no analytics, font host or map tile server in the policy to send them
       to.
 
-      The basemap is still bundled geometry (src/coastline.ts) rather than
-      fetched tiles, so everything except the live position keeps working with
-      no connection at all — which is the point on a plane, where the schedule
-      estimate is all anyone can have anyway.
+      `img-src` additionally allows OpenStreetMap's tile server, which draws the
+      map itself. Beneath those tiles the app still carries its own coastline
+      geometry (src/coastline.ts), so with no connection at all the route is
+      still drawn over a recognisable outline — which is the point on a plane,
+      where the schedule estimate is all anyone can have anyway.
 
       `style-src 'unsafe-inline'` is here because React `style={{…}}` props are
       inline style attributes. Styles only; it grants no script execution.
@@ -29,7 +30,7 @@
       content="default-src 'self';
                script-src 'self';
                style-src 'self' 'unsafe-inline';
-               img-src 'self' data:;
+               img-src 'self' data: https://tile.openstreetmap.org;
                connect-src 'self' https://api.adsb.lol https://opendata.adsb.fi https://api.airplanes.live;
                object-src 'none';
                base-uri 'self';

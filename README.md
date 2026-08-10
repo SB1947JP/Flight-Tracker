@@ -14,7 +14,11 @@ So a gap is the normal condition, not a fault. When the signal drops the app kee
 
 ## The three decisions worth knowing
 
-**Only the flight lookups leave this page.** The Content-Security-Policy in `index.html` allows the three flight networks and nothing else — no analytics, no font host, no map tile server. Your flights stay in this browser and are never uploaded; the only thing sent out is a radio callsign. The basemap is bundled coastline geometry (`src/coastline.ts`, Natural Earth 110m, public domain) drawn as vector paths rather than fetched tiles, so everything except the live position still works with no connection at all — which matters on a plane, where the schedule estimate is all anyone can have anyway.
+**The map has two layers.** On top, OpenStreetMap raster tiles — real coastlines, place names, terrain. Underneath, drawn first and covered when the tiles arrive, the bundled 110m coastline (`src/coastline.ts`, Natural Earth, public domain) as vector paths. Offline, at altitude, or behind a blocker, the tiles simply don't appear and the drawn outline carries the route instead.
+
+The tiles were removed at one point in favour of the vector outline alone, on the reasoning that an app with no external requests was worth a coarse map. That reasoning expired the moment live positions were added: the app already needs a connection for the thing it exists to do. The outline survives as the fallback, which is what it was always genuinely good for.
+
+**Little else leaves this page.** The Content-Security-Policy in `index.html` allows the three flight networks and the tile server, and nothing else — no analytics, no font host. Your flights stay in this browser and are never uploaded; the only thing sent out is a radio callsign.
 
 **A flight number is enough.** The schedule is optional throughout: `Flight` carries its four schedule fields as all-or-nothing (`hasSchedule`), `resolveProgress` returns null without them, and the map, the statistics and the polling all adapt rather than requiring them. Flights saved before this was true load unchanged.
 
