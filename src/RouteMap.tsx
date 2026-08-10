@@ -32,6 +32,42 @@ import { FlightProgress } from './flights';
  * zoom levels here mean the same thing they do on any other slippy map.
  */
 
+/**
+ * The aircraft marker: nose at the top, symmetric about x, roughly 25 units tall.
+ *
+ * Curves at the nose and tail, straight swept edges through the wings — which is
+ * what makes it read as an aeroplane at 20 pixels rather than as an arrowhead.
+ *
+ * The fuselage is deliberately fatter than a drawing at full size would want.
+ * At the size this is actually seen the outline is a real fraction of the
+ * body's width, and a slender fuselage ends up as two white lines with a sliver
+ * of colour between them — a line drawing of an aeroplane rather than one.
+ */
+const PLANE_PATH = [
+  'M0 -13.5',
+  'C1.5 -12.6 2.7 -9.6 2.8 -5.8', // nose cone into the fuselage
+  'L2.8 -3.0',
+  'L12.8 3.6', // wing leading edge, swept back
+  'L12.8 6.0', // wing tip
+  'L2.8 2.4', // trailing edge back to the root
+  'L2.8 7.2',
+  'L6.2 9.9', // tailplane
+  'L6.2 11.5',
+  'L2.2 9.9',
+  'C2.2 11.2 1.5 12.4 0 13.0', // tail cone
+  'C-1.5 12.4 -2.2 11.2 -2.2 9.9',
+  'L-6.2 11.5',
+  'L-6.2 9.9',
+  'L-2.8 7.2',
+  'L-2.8 2.4',
+  'L-12.8 6.0',
+  'L-12.8 3.6',
+  'L-2.8 -3.0',
+  'L-2.8 -5.8',
+  'C-2.7 -9.6 -1.5 -12.6 0 -13.5',
+  'Z',
+].join(' ');
+
 const TILE_SIZE = 256;
 const MIN_ZOOM = 1;
 /** Tiles are served to z19; past ~16 a route map has nothing left to say. */
@@ -428,13 +464,22 @@ export function RouteMap({
           )}
 
           {(livePosition || (progress && progress.status !== 'scheduled')) && (
-            <g transform={`translate(${planePx.left} ${planePx.top}) rotate(${planeHeading})`}>
+            <g transform={`translate(${planePx.left} ${planePx.top}) rotate(${planeHeading}) scale(0.82)`}>
+              {/* A slim swept-wing silhouette in the manner of the aeroplane
+                  glyph on a phone's status bar, rather than the blunt
+                  straight-edged shape this started as. Drawn nose-up, so the
+                  rotation above is simply the aircraft's track.
+
+                  The outline is doing real work: this sits over map tiles that
+                  run from pale sea to dark city, and a solid fill alone
+                  disappears against half of them. */}
               <path
-                d="M0 -11 L2.6 -3.5 L11 3 L11 5.4 L2.6 2.6 L2.6 8 L5.4 10.4 L5.4 12 L0 10.4 L-5.4 12 L-5.4 10.4 L-2.6 8 L-2.6 2.6 L-11 5.4 L-11 3 L-2.6 -3.5 Z"
+                d={PLANE_PATH}
                 fill={UI_COLORS.danger}
-                stroke="#f5f5f5"
-                strokeWidth={1}
+                stroke="#fafafa"
+                strokeWidth={0.9}
                 strokeLinejoin="round"
+                strokeLinecap="round"
               />
             </g>
           )}
