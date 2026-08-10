@@ -1,5 +1,5 @@
 import { ACCENT_BORDER, ACCENT_WASH, UI_COLORS } from './palette';
-import { Flight, FlightProgress, PHASE_LABEL, STATUS_LABEL, resolveProgress } from './flights';
+import { Flight, FlightProgress, PHASE_LABEL, STATUS_LABEL, ScheduledFlight, hasSchedule, resolveProgress } from './flights';
 import { RouteMap } from './RouteMap';
 import { deviceZone, formatClock, formatDate, formatDuration, formatInDeviceZone, formatZoneAbbr } from './time';
 import { FIX_FRESH_MS, LiveState } from './useLive';
@@ -20,12 +20,13 @@ export function FlightDetail({
 }) {
   const progress = resolveProgress(flight, now);
 
-  if (!progress) {
+  // A schedule was given but an airport code in it is unknown, so no route can
+  // be drawn. Distinct from having no schedule at all, and worth saying so.
+  if (hasSchedule(flight) && !progress) {
     return (
       <div className="p-6 text-sm" style={{ color: UI_COLORS.danger }}>
-        This flight refers to an airport code that isn&rsquo;t in the bundled table
-        ({flight.from} → {flight.to}). Edit it, or add the airport to{' '}
-        <code className="text-neutral-400">src/flights/airports.ts</code>.
+        This flight refers to an airport code that isn&rsquo;t in the bundled table ({flight.from} → {flight.to}). Edit
+        it, or add the airport to <code className="text-neutral-400">src/airports.ts</code>.
       </div>
     );
   }
@@ -33,15 +34,47 @@ export function FlightDetail({
   return (
     <div className="flex flex-col gap-4 h-full min-h-0">
       <Header flight={flight} progress={progress} onEdit={onEdit} onDelete={onDelete} />
-      <Timeline flight={flight} progress={progress} now={now} />
 
-      <LiveBar live={live} status={progress.status} now={now} />
+      {hasSchedule(flight) && progress ? (
+        <Timeline flight={flight} progress={progress} now={now} />
+      ) : (
+        <NoSchedule live={live} onEdit={onEdit} />
+      )}
+
+      <LiveBar live={live} status={progress?.status} now={now} />
 
       <div className="flex-1 min-h-[16rem]">
         <RouteMap progress={progress} livePosition={live.lastFix} />
       </div>
 
       <Stats progress={progress} live={live} now={now} />
+    </div>
+  );
+}
+
+/**
+ * Stands in for the timeline when a flight is being followed by number alone.
+ *
+ * Rather than an empty space where the departure and arrival times would be,
+ * this says what the app does and doesn't know — and offers the schedule as an
+ * addition, since that is exactly what would fill the gap.
+ */
+function NoSchedule({ live, onEdit }: { live: LiveState; onEdit: () => void }) {
+  const fix = live.lastFix;
+  return (
+    <div className="flex items-center justify-between gap-4 text-sm">
+      <p className="text-neutral-400 leading-snug">
+        {fix
+          ? 'Following this aircraft live. No schedule, so no route or time remaining.'
+          : 'Following by flight number alone — nothing to show until the aircraft is transmitting.'}
+      </p>
+      <button
+        type="button"
+        onClick={onEdit}
+        className="shrink-0 px-2.5 py-1 rounded text-xs border border-neutral-700 text-neutral-400 hover:text-neutral-200 hover:border-neutral-600"
+      >
+        Add a schedule
+      </button>
     </div>
   );
 }
@@ -53,31 +86,35 @@ function Header({
   onDelete,
 }: {
   flight: Flight;
-  progress: FlightProgress;
+  progress: FlightProgress | null;
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const { origin, destination, status, phase } = progress;
   return (
     <div className="flex items-start justify-between gap-4">
       <div className="min-w-0">
         <div className="flex items-baseline gap-3 flex-wrap">
           <h2 className="text-xl font-medium text-neutral-100">{flight.number}</h2>
-          <span
-            className="px-2 py-0.5 rounded text-[11px] uppercase tracking-wide border"
-            style={
-              status === 'enroute'
-                ? { borderColor: ACCENT_BORDER, backgroundColor: ACCENT_WASH, color: UI_COLORS.accent }
-                : { borderColor: UI_COLORS.muted, color: UI_COLORS.heading }
-            }
-          >
-            {STATUS_LABEL[status]}
-            {status === 'enroute' && ` · ${PHASE_LABEL[phase]}`}
-          </span>
+          {progress && (
+            <span
+              className="px-2 py-0.5 rounded text-[11px] uppercase tracking-wide border"
+              style={
+                progress.status === 'enroute'
+                  ? { borderColor: ACCENT_BORDER, backgroundColor: ACCENT_WASH, color: UI_COLORS.accent }
+                  : { borderColor: UI_COLORS.muted, color: UI_COLORS.heading }
+              }
+            >
+              {STATUS_LABEL[progress.status]}
+              {progress.status === 'enroute' && ` · ${PHASE_LABEL[progress.phase]}`}
+            </span>
+          )}
         </div>
-        <p className="mt-1 text-sm text-neutral-400 truncate">
-          {origin.city} ({origin.iata}) → {destination.city} ({destination.iata})
-        </p>
+        {progress && (
+          <p className="mt-1 text-sm text-neutral-400 truncate">
+            {progress.origin.city} ({progress.origin.iata}) → {progress.destination.city} (
+            {progress.destination.iata})
+          </p>
+        )}
         {flight.note && <p className="mt-1 text-xs text-neutral-500 truncate">{flight.note}</p>}
       </div>
 
@@ -103,7 +140,7 @@ function Header({
 }
 
 /** Departure and arrival times, with the progress bar between them. */
-function Timeline({ flight, progress, now }: { flight: Flight; progress: FlightProgress; now: number }) {
+function Timeline({ flight, progress, now }: { flight: ScheduledFlight; progress: FlightProgress; now: number }) {
   const { origin, destination, status, fraction, remainingMs, elapsedMs, durationMs } = progress;
 
   // One line that answers the only question anyone opens a tracker to ask.
@@ -163,13 +200,17 @@ function Timeline({ flight, progress, now }: { flight: Flight; progress: FlightP
  * and the difference matters enormously — so it is stated outright, every time,
  * rather than left for the reader to infer from a subtle colour.
  */
-function LiveBar({ live, status, now }: { live: LiveState; status: FlightProgress['status']; now: number }) {
+function LiveBar({ live, status, now }: { live: LiveState; status?: FlightProgress['status']; now: number }) {
   const { callsign, lastFix, result, loading, refresh } = live;
+
+  // Without a schedule there is no "not yet departed" to wait for — the aircraft
+  // is either transmitting or it isn't, so the search runs continuously.
+  const watching = status === undefined || status === 'enroute';
 
   let tone: 'live' | 'stale' | 'idle' = 'idle';
   let text: string;
 
-  if (status !== 'enroute') {
+  if (!watching) {
     text = status === 'scheduled' ? 'Live tracking starts when the flight departs.' : 'Flight has landed.';
   } else if (!callsign) {
     text = "Couldn't work out this flight's radio callsign — try entering it directly (e.g. QFA12 instead of QF12).";
@@ -212,7 +253,7 @@ function LiveBar({ live, status, now }: { live: LiveState; status: FlightProgres
         }
       />
       <span className="min-w-0 flex-1 leading-snug">{text}</span>
-      {status === 'enroute' && callsign && (
+      {watching && callsign && (
         <button
           type="button"
           onClick={refresh}
@@ -260,30 +301,52 @@ function Endpoint({
   );
 }
 
-function Stats({ progress, live, now }: { progress: FlightProgress; live: LiveState; now: number }) {
-  const { position, totalDistanceKm, flownKm, remainingKm, averageSpeedKmh, headingDeg, status } = progress;
+function Stats({ progress, live, now }: { progress: FlightProgress | null; live: LiveState; now: number }) {
   const fix = live.lastFix;
   const fixIsFresh = fix !== null && now - fix.receivedAt < FIX_FRESH_MS;
 
   // Real measurements replace the estimates one by one, wherever the aircraft
-  // actually reported them — a feed may carry a position but no altitude.
-  const stats: { label: string; value: string; live?: boolean }[] = [
-    { label: 'Distance', value: `${Math.round(totalDistanceKm).toLocaleString()} km` },
-    { label: 'Flown', value: `${Math.round(flownKm).toLocaleString()} km` },
-    { label: 'To run', value: `${Math.round(remainingKm).toLocaleString()} km` },
-    fixIsFresh && fix.groundSpeedKmh !== undefined
-      ? { label: 'Ground speed', value: `${Math.round(fix.groundSpeedKmh).toLocaleString()} km/h`, live: true }
-      : { label: 'Avg ground speed', value: `${Math.round(averageSpeedKmh).toLocaleString()} km/h` },
-    fixIsFresh && fix.altitudeM !== undefined
-      ? { label: 'Altitude', value: `${Math.round(fix.altitudeM).toLocaleString()} m`, live: true }
-      : { label: 'Track', value: `${Math.round(headingDeg)}°` },
-    fix
-      ? { label: 'Position', value: `${fix.lat.toFixed(2)}, ${fix.lon.toFixed(2)}`, live: fixIsFresh }
-      : {
-          label: 'Position',
-          value: status === 'scheduled' ? 'On the ground' : `${position.lat.toFixed(2)}, ${position.lon.toFixed(2)}`,
-        },
-  ];
+  // actually reported them — a feed may carry a position but no altitude. With
+  // no schedule, only the measured ones exist at all.
+  const stats: { label: string; value: string; live?: boolean }[] = [];
+
+  if (progress) {
+    stats.push(
+      { label: 'Distance', value: `${Math.round(progress.totalDistanceKm).toLocaleString()} km` },
+      { label: 'Flown', value: `${Math.round(progress.flownKm).toLocaleString()} km` },
+      { label: 'To run', value: `${Math.round(progress.remainingKm).toLocaleString()} km` },
+    );
+  }
+
+  if (fixIsFresh && fix.groundSpeedKmh !== undefined) {
+    stats.push({ label: 'Ground speed', value: `${Math.round(fix.groundSpeedKmh).toLocaleString()} km/h`, live: true });
+  } else if (progress) {
+    stats.push({ label: 'Avg ground speed', value: `${Math.round(progress.averageSpeedKmh).toLocaleString()} km/h` });
+  }
+
+  if (fixIsFresh && fix.altitudeM !== undefined) {
+    stats.push({ label: 'Altitude', value: `${Math.round(fix.altitudeM).toLocaleString()} m`, live: true });
+  } else if (progress) {
+    stats.push({ label: 'Track', value: `${Math.round(progress.headingDeg)}°` });
+  }
+
+  if (fixIsFresh && fix.headingDeg !== undefined) {
+    stats.push({ label: 'Track', value: `${Math.round(fix.headingDeg)}°`, live: true });
+  }
+
+  if (fix) {
+    stats.push({ label: 'Position', value: `${fix.lat.toFixed(2)}, ${fix.lon.toFixed(2)}`, live: fixIsFresh });
+  } else if (progress) {
+    stats.push({
+      label: 'Position',
+      value:
+        progress.status === 'scheduled'
+          ? 'On the ground'
+          : `${progress.position.lat.toFixed(2)}, ${progress.position.lon.toFixed(2)}`,
+    });
+  }
+
+  if (stats.length === 0) return null;
 
   return (
     <div>
@@ -302,9 +365,11 @@ function Stats({ progress, live, now }: { progress: FlightProgress; live: LiveSt
           tracker that looked authoritative about a diverted flight would be
           worse than one that admits what it knows. */}
       <p className="mt-3 text-[11px] text-neutral-600 leading-snug">
-        {fixIsFresh
+        {fixIsFresh && progress
           ? 'Figures marked · are measured from the aircraft itself. The rest are worked out from the schedule you entered, along a direct route.'
-          : 'These are worked out from the schedule you entered — a direct route flown at a constant rate. They do not account for actual routing, winds, holding or delays.'}
+          : fixIsFresh
+            ? 'All of these are measured from the aircraft itself.'
+            : 'These are worked out from the schedule you entered — a direct route flown at a constant rate. They do not account for actual routing, winds, holding or delays.'}
       </p>
     </div>
   );

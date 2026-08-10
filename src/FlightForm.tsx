@@ -165,10 +165,14 @@ export function FlightForm({
   const [to, setTo] = useState(existing?.to ?? '');
   const [note, setNote] = useState(existing?.note ?? '');
   const [departLocal, setDepartLocal] = useState(() =>
-    existing ? utcToZonedWallClock(existing.departUtc, findAirport(existing.from)?.tz ?? 'UTC') : '',
+    existing?.departUtc !== undefined
+      ? utcToZonedWallClock(existing.departUtc, findAirport(existing.from ?? '')?.tz ?? 'UTC')
+      : '',
   );
   const [arriveLocal, setArriveLocal] = useState(() =>
-    existing ? utcToZonedWallClock(existing.arriveUtc, findAirport(existing.to)?.tz ?? 'UTC') : '',
+    existing?.arriveUtc !== undefined
+      ? utcToZonedWallClock(existing.arriveUtc, findAirport(existing.to ?? '')?.tz ?? 'UTC')
+      : '',
   );
   const [error, setError] = useState<string | null>(null);
 
@@ -179,7 +183,7 @@ export function FlightForm({
   // is a natural thing to do, and it leaves two flights that look identical
   // everywhere except their dates.
   const duplicate = others.find(
-    (f) => f.number === number.trim().toUpperCase() && f.from === from && f.to === to,
+    (f) => f.number === number.trim().toUpperCase() && (f.from ?? '') === from && (f.to ?? '') === to,
   );
 
   /**
@@ -220,9 +224,24 @@ export function FlightForm({
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (!number.trim()) return setError('Give the flight a number or a name.');
+
+    const base = {
+      id: existing?.id ?? newFlightId(),
+      number: number.trim().toUpperCase(),
+      note: note.trim() || undefined,
+    };
+
+    // The schedule is all-or-nothing. Leaving every field blank is a complete,
+    // valid answer — follow this aircraft, that's all — so an empty section is
+    // not an error to be nagged about.
+    const filled = [from, to, departLocal, arriveLocal].filter((v) => v.trim() !== '');
+    if (filled.length === 0) return onSave(base);
+    if (filled.length < 4) {
+      return setError('Fill in both airports and both times, or leave all four blank to just follow it live.');
+    }
+
     if (!origin) return setError('Departure airport code not recognised.');
     if (!destination) return setError('Arrival airport code not recognised.');
-    if (!departLocal || !arriveLocal) return setError('Both departure and arrival times are needed.');
 
     const departUtc = zonedWallClockToUtc(departLocal, origin.tz);
     const arriveUtc = zonedWallClockToUtc(arriveLocal, destination.tz);
@@ -231,15 +250,7 @@ export function FlightForm({
       return setError('Arrival is at or before departure. Check the date — overnight flights land the next day.');
     }
 
-    onSave({
-      id: existing?.id ?? newFlightId(),
-      number: number.trim().toUpperCase(),
-      from: origin.iata,
-      to: destination.iata,
-      departUtc,
-      arriveUtc,
-      note: note.trim() || undefined,
-    });
+    onSave({ ...base, from: origin.iata, to: destination.iata, departUtc, arriveUtc });
   };
 
   return (
@@ -258,9 +269,23 @@ export function FlightForm({
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <AirportField id="flight-from" label="From" value={from} onChange={setFrom} />
-        <AirportField id="flight-to" label="To" value={to} onChange={setTo} />
+      <p className="text-[11px] text-neutral-500 leading-snug -mt-2">
+        That is all you need to follow it live — the aircraft broadcasts its own position, altitude and speed.
+      </p>
+
+      <div className="pt-1 border-t border-neutral-800">
+        <p className="pt-3 text-[11px] uppercase tracking-wide" style={{ color: UI_COLORS.heading }}>
+          Schedule <span className="normal-case tracking-normal text-neutral-600">— optional</span>
+        </p>
+        <p className="mt-1 mb-3 text-[11px] text-neutral-500 leading-snug">
+          Add the airports and times and you also get the route drawn, how far it has come, and how long is left —
+          including while the aircraft is out of radio range.
+        </p>
+
+        <div className="grid grid-cols-2 gap-3">
+          <AirportField id="flight-from" label="From" value={from} onChange={setFrom} />
+          <AirportField id="flight-to" label="To" value={to} onChange={setTo} />
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3">

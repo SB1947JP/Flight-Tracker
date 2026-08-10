@@ -1,8 +1,8 @@
 # Flight Tracker
 
-Type in a flight — its number, the two airports, and the two times off your ticket — and see where it is: status and phase, time remaining, how far it has flown and how far is left, and its position on a map.
+Type in a flight number and watch the aircraft: its real position, altitude, speed and heading, picked up from what the aeroplane itself is broadcasting.
 
-Where there's coverage it shows the aircraft's **real** position, altitude and speed, picked up from what the aeroplane itself is broadcasting. Where there isn't, it falls back to working the position out from the schedule. It always says which of the two you are looking at.
+That is the whole requirement — no airports, no times. Add the schedule as well and you also get the route drawn, how far it has come, how long is left, and an estimated position for the long stretches where nobody on the ground can hear the aircraft. The app always says which of the two you are looking at.
 
 ## Coverage, and why it comes and goes
 
@@ -15,6 +15,8 @@ So a gap is the normal condition, not a fault. When the signal drops the app kee
 ## The three decisions worth knowing
 
 **Exactly one outside connection.** The Content-Security-Policy in `index.html` allows `api.adsb.lol` and nothing else — no analytics, no font host, no map tile server. Your flights stay in this browser and are never uploaded; the only thing sent out is a radio callsign. The basemap is bundled coastline geometry (`src/coastline.ts`, Natural Earth 110m, public domain) drawn as vector paths rather than fetched tiles, so everything except the live position still works with no connection at all — which matters on a plane, where the schedule estimate is all anyone can have anyway.
+
+**A flight number is enough.** The schedule is optional throughout: `Flight` carries its four schedule fields as all-or-nothing (`hasSchedule`), `resolveProgress` returns null without them, and the map, the statistics and the polling all adapt rather than requiring them. Flights saved before this was true load unchanged.
 
 **Ticket numbers aren't radio callsigns.** Your boarding pass says `QF12`; the aircraft identifies itself as `QFA12`. Looking up live traffic by the ticket number finds nothing, so `src/airlines.ts` translates the airline prefix. Typing a callsign directly also works, which is the way round an airline the table doesn't carry.
 
@@ -42,7 +44,7 @@ node tools/build-singlefile.mjs    # after a build: inline everything into dist/
 
 ## Adding an airport
 
-`src/airports.ts` holds about 130 of the busiest passenger airports. Adding one is a row: IATA code, position in degrees, and its IANA timezone name. An unrecognised code is reported in the form rather than silently accepted.
+`src/airports.ts` holds about 135 of the busiest passenger airports. Every position in it has been checked against the OurAirports dataset and agrees to within 3 km. Adding one is a row: IATA code, position in degrees, and its IANA timezone name. An unrecognised code is reported in the form rather than silently accepted.
 
 ## Layout
 

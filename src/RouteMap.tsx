@@ -99,7 +99,9 @@ export function RouteMap({
   progress,
   livePosition,
 }: {
-  progress: FlightProgress;
+  /** The route to draw. Null when a flight is being followed by number alone —
+   *  then there is only an aircraft to show, and the map centres on it. */
+  progress: FlightProgress | null;
   /** A real reported position, when one is available. The aircraft is drawn
    *  here instead of at its scheduled place along the route — which is the
    *  whole point: the gap between the two is the delay. */
@@ -110,8 +112,11 @@ export function RouteMap({
   const [view, setView] = useState<{ zoom: number; x: number; y: number } | null>(null);
   const dragRef = useRef<{ pointerId: number; lastX: number; lastY: number } | null>(null);
 
-  const from: LatLon = { lat: progress.origin.lat, lon: progress.origin.lon };
-  const to: LatLon = { lat: progress.destination.lat, lon: progress.destination.lon };
+  // With no route, both ends collapse onto the aircraft itself, so the fitting
+  // and projection below work unchanged and simply frame a single point.
+  const anchor: LatLon = livePosition ?? { lat: 0, lon: 0 };
+  const from: LatLon = progress ? { lat: progress.origin.lat, lon: progress.origin.lon } : anchor;
+  const to: LatLon = progress ? { lat: progress.destination.lat, lon: progress.destination.lon } : anchor;
 
   // The full route, in geographic space. Only the endpoints matter here, so
   // this doesn't need recomputing every tick as the aircraft advances.
@@ -142,20 +147,36 @@ export function RouteMap({
     const padding = 56;
     const usableW = Math.max(64, width - padding * 2);
     const usableH = Math.max(64, height - padding * 2);
-    const zoom = Math.max(
-      MIN_ZOOM,
-      Math.min(MAX_ZOOM, Math.floor(Math.log2(Math.min(usableW / (spanX * TILE_SIZE), usableH / (spanY * TILE_SIZE))))),
-    );
+    // A single point has no extent, so a fitted zoom would run to the maximum.
+    // Zoom 5 instead: enough to show which country an aircraft is over, and no
+    // closer than the bundled 110m coastline can honestly support — finer data
+    // exists but costs ten times the download and sixty thousand points to
+    // reproject, for detail a position marker doesn't need.
+    const zoom = progress
+      ? Math.max(
+          MIN_ZOOM,
+          Math.min(MAX_ZOOM, Math.floor(Math.log2(Math.min(usableW / (spanX * TILE_SIZE), usableH / (spanY * TILE_SIZE))))),
+        )
+      : 5;
     const scale = 2 ** zoom;
     setView({ zoom, x: ((minX + maxX) / 2) * scale, y: ((minY + maxY) / 2) * scale });
-  }, [fullPath, size]);
+  }, [fullPath, size, progress]);
 
-  // Re-fit when the route itself changes (a different flight selected) or the
-  // container is first measured — but not on every tick, or panning the map
-  // would be undone a second later by the aircraft moving.
+  // `fit` closes over `progress`, which is rebuilt every tick, so calling it
+  // whenever it changes identity would re-frame the map once a second and undo
+  // any pan. Trigger on a *description* of the view instead: the route's
+  // endpoints, or — with no route — merely whether a position exists yet. A
+  // followed aircraft is then framed once, when its first fix arrives, and left
+  // alone as it moves.
+  const fitRef = useRef(fit);
+  fitRef.current = fit;
+  const fitTrigger = progress
+    ? `route:${from.lat},${from.lon},${to.lat},${to.lon}:${size.width}x${size.height}`
+    : `watch:${livePosition ? 'located' : 'nothing'}:${size.width}x${size.height}`;
+
   useEffect(() => {
-    fit();
-  }, [fit]);
+    fitRef.current();
+  }, [fitTrigger]);
 
   useLayoutEffect(() => {
     const el = containerRef.current;
@@ -213,7 +234,7 @@ export function RouteMap({
     left: (p.x - (view?.x ?? 0)) * TILE_SIZE + width / 2,
     top: (p.y - (view?.y ?? 0)) * TILE_SIZE + height / 2,
   });
-  const splitIndex = Math.round(progress.fraction * PATH_SEGMENTS);
+  const splitIndex = Math.round((progress?.fraction ?? 0) * PATH_SEGMENTS);
   const toPolyline = (pts: { x: number; y: number }[]) =>
     pts
       .map((p) => {
@@ -230,7 +251,7 @@ export function RouteMap({
   // is projected on its own — then shifted onto whichever copy of the world the
   // route was drawn on, or a Pacific flight would land a whole map-width away.
   let planePx = schedulePx;
-  let planeHeading = progress.headingDeg;
+  let planeHeading = progress?.headingDeg ?? 0;
   if (livePosition && view) {
     const world = 2 ** zoom;
     let x = lonToTileX(livePosition.lon, zoom);
@@ -258,7 +279,9 @@ export function RouteMap({
           className="absolute inset-0 pointer-events-none"
           width={width}
           height={height}
-          aria-label={`Route from ${progress.origin.iata} to ${progress.destination.iata}`}
+          aria-label={
+            progress ? `Route from ${progress.origin.iata} to ${progress.destination.iata}` : 'Aircraft position'
+          }
         >
           {/* The basemap. Geometry is in tile coordinates, so the whole layer
               is positioned by one transform: scale tiles→pixels, then translate
@@ -280,27 +303,30 @@ export function RouteMap({
 
           {/* Remaining leg: dashed, so "not yet flown" reads at a glance
               without needing a second colour. */}
-          <polyline
+          {progress && <polyline
             points={toPolyline(projected.slice(splitIndex))}
             fill="none"
             stroke={UI_COLORS.muted}
             strokeWidth={2}
             strokeDasharray="5 5"
             strokeLinecap="round"
-          />
+          />}
           {/* Flown leg: solid and brighter. */}
-          <polyline
+          {progress && <polyline
             points={toPolyline(projected.slice(0, splitIndex + 1))}
             fill="none"
             stroke={UI_COLORS.accent}
             strokeWidth={2.25}
             strokeLinecap="round"
-          />
+          />}
 
-          {[
-            { px: originPx, label: progress.origin.iata },
-            { px: destPx, label: progress.destination.iata },
-          ].map((end) => (
+          {(progress
+            ? [
+                { px: originPx, label: progress.origin.iata },
+                { px: destPx, label: progress.destination.iata },
+              ]
+            : []
+          ).map((end) => (
             <g key={end.label}>
               <circle cx={end.px.left} cy={end.px.top} r={4} fill="#0a0a0a" stroke={UI_COLORS.accent} strokeWidth={1.75} />
               <text
@@ -321,7 +347,7 @@ export function RouteMap({
           {/* Where the schedule says it should be, shown only when the real
               aircraft is somewhere else — a hollow marker the live one can be
               compared against. */}
-          {livePosition && progress.status === 'enroute' && (
+          {livePosition && progress?.status === 'enroute' && (
             <circle
               cx={schedulePx.left}
               cy={schedulePx.top}
@@ -333,7 +359,7 @@ export function RouteMap({
             />
           )}
 
-          {progress.status !== 'scheduled' && (
+          {(livePosition || (progress && progress.status !== 'scheduled')) && (
             <g transform={`translate(${planePx.left} ${planePx.top}) rotate(${planeHeading})`}>
               <path
                 d="M0 -11 L2.6 -3.5 L11 3 L11 5.4 L2.6 2.6 L2.6 8 L5.4 10.4 L5.4 12 L0 10.4 L-5.4 12 L-5.4 10.4 L-2.6 8 L-2.6 2.6 L-11 5.4 L-11 3 L-2.6 -3.5 Z"

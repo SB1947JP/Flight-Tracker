@@ -15,19 +15,51 @@
 import { Airport, findAirport } from './airports';
 import { bearingDeg, distanceKm, interpolate, LatLon } from './geo';
 
+/**
+ * A tracked flight.
+ *
+ * The schedule is **optional**, and that is the important thing about this
+ * type. Following an aircraft live needs nothing but its number: the broadcast
+ * carries position, altitude, speed and heading on its own. Airports and times
+ * buy you the things a broadcast can't give — a route line, progress, time
+ * remaining, and a position to fall back on when the signal drops — so they are
+ * offered rather than demanded.
+ *
+ * The four schedule fields travel together: all four or none. `hasSchedule`
+ * is the only way this is checked, so the rest of the app can't half-use them.
+ * Keeping them as optional flat fields rather than a nested object means
+ * flights saved before this existed load unchanged, with no migration.
+ */
 export interface Flight {
   id: string;
   /** Flight number as printed, e.g. "QF63". Free text — never parsed. */
   number: string;
   /** Departure airport IATA code. */
-  from: string;
+  from?: string;
   /** Arrival airport IATA code. */
-  to: string;
+  to?: string;
   /** Scheduled departure, as a UTC epoch in ms. */
-  departUtc: number;
+  departUtc?: number;
   /** Scheduled arrival, as a UTC epoch in ms. */
-  arriveUtc: number;
+  arriveUtc?: number;
   note?: string;
+}
+
+/** A flight that carries a full schedule, and so can be drawn as a route. */
+export type ScheduledFlight = Flight & {
+  from: string;
+  to: string;
+  departUtc: number;
+  arriveUtc: number;
+};
+
+export function hasSchedule(flight: Flight): flight is ScheduledFlight {
+  return (
+    typeof flight.from === 'string' &&
+    typeof flight.to === 'string' &&
+    typeof flight.departUtc === 'number' &&
+    typeof flight.arriveUtc === 'number'
+  );
 }
 
 export type FlightStatus = 'scheduled' | 'enroute' | 'arrived';
@@ -56,8 +88,13 @@ export interface FlightProgress {
   averageSpeedKmh: number;
 }
 
-/** A flight whose airport codes both resolve — the only kind that can be drawn. */
+/**
+ * Everything derivable from a schedule. Null when there is no schedule to
+ * derive it from, or when an airport code doesn't resolve — in both cases the
+ * flight can still be followed live, just without a route.
+ */
 export function resolveProgress(flight: Flight, now: number): FlightProgress | null {
+  if (!hasSchedule(flight)) return null;
   const origin = findAirport(flight.from);
   const destination = findAirport(flight.to);
   if (!origin || !destination) return null;
@@ -159,9 +196,15 @@ export function saveFlights(flights: Flight[]): void {
 function isFlight(value: unknown): value is Flight {
   if (typeof value !== 'object' || value === null) return false;
   const f = value as Record<string, unknown>;
+  if (typeof f.id !== 'string' || typeof f.number !== 'string') return false;
+
+  // The schedule is optional, but a half-present one is corrupt rather than
+  // absent — a record with a departure and no arrival would produce nonsense.
+  const parts = [f.from, f.to, f.departUtc, f.arriveUtc];
+  const present = parts.filter((p) => p !== undefined && p !== null);
+  if (present.length === 0) return true;
+  if (present.length !== 4) return false;
   return (
-    typeof f.id === 'string' &&
-    typeof f.number === 'string' &&
     typeof f.from === 'string' &&
     typeof f.to === 'string' &&
     typeof f.departUtc === 'number' &&

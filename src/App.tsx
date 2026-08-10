@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ACCENT_BORDER, ACCENT_WASH, UI_COLORS } from './palette';
-import { Flight, STATUS_LABEL, loadFlights, resolveProgress, saveFlights } from './flights';
+import { Flight, STATUS_LABEL, hasSchedule, loadFlights, resolveProgress, saveFlights } from './flights';
 import { useLive } from './useLive';
 import { FlightDetail } from './FlightDetail';
 import { FlightForm } from './FlightForm';
@@ -22,12 +22,15 @@ const SELECTED_KEY = 'flight-tracker/selected/v1';
 /**
  * A simple flight tracker.
  *
- * Everything is typed in by hand and stored locally — there is no flight-status
- * API behind it. That is a deliberate consequence of where this lives: the
- * editor it ships alongside holds people's private photographs and enforces
- * `connect-src 'self'` so their data has nowhere to be exfiltrated to, and this
- * page keeps the same policy rather than punching the first hole in it. What
- * you get for that is a tracker that works on a plane, offline, forever.
+ * A flight number alone is enough: the aircraft broadcasts its own position,
+ * and `useLive` listens for it. The schedule — two airports and two times — is
+ * an optional addition that buys the things a broadcast cannot give you: the
+ * route drawn, distance flown, time remaining, and a position to fall back on
+ * across the long stretches where nobody on the ground can hear the aircraft.
+ *
+ * Everything except that one lookup is local. Flights live in this browser and
+ * are never uploaded; the map is bundled geometry rather than fetched tiles, so
+ * the schedule half of the app keeps working with no connection at all.
  */
 
 /** Wall-clock tick driving every derived value on the page. */
@@ -66,22 +69,36 @@ export default function App() {
   }, [selectedId]);
 
   // Sorted by departure so the list reads as an itinerary rather than as the
-  // order things happened to be entered in.
-  const ordered = useMemo(() => [...flights].sort((a, b) => a.departUtc - b.departUtc), [flights]);
+  // order things happened to be entered in. Flights being followed by number
+  // alone have no departure to sort by and belong at the top: they are about
+  // right now, not about a day in the diary.
+  const ordered = useMemo(
+    () =>
+      [...flights].sort((a, b) => {
+        if (a.departUtc === undefined || b.departUtc === undefined) {
+          return (a.departUtc === undefined ? 0 : 1) - (b.departUtc === undefined ? 0 : 1);
+        }
+        return a.departUtc - b.departUtc;
+      }),
+    [flights],
+  );
 
   // Default selection: whatever is in the air, else the next one to depart,
   // else the most recent. Opening the page mid-trip should land on the flight
   // you are actually on.
   const selected =
     ordered.find((f) => f.id === selectedId) ??
-    ordered.find((f) => now >= f.departUtc && now < f.arriveUtc) ??
-    ordered.find((f) => f.departUtc > now) ??
+    ordered.find((f) => hasSchedule(f) && now >= f.departUtc && now < f.arriveUtc) ??
+    ordered.find((f) => hasSchedule(f) && f.departUtc > now) ??
     ordered[ordered.length - 1];
 
   // Live tracking follows whatever is on screen, and only while it's flying —
   // see `useLive` for why the polling is kept as narrow as it is.
   const selectedProgress = selected ? resolveProgress(selected, now) : null;
-  const live = useLive(selected, selectedProgress?.status === 'enroute');
+  // With no schedule there is no departure to wait for, so the search runs
+  // whenever such a flight is on screen — that is the entire point of adding
+  // one by number alone.
+  const live = useLive(selected, selected !== undefined && (!hasSchedule(selected) || selectedProgress?.status === 'enroute'));
 
   const save = (flight: Flight) => {
     setFlights((current) => {
@@ -148,16 +165,16 @@ export default function App() {
                     <div className="flex items-baseline justify-between gap-2">
                       <span className="text-sm text-neutral-100">{flight.number}</span>
                       <span className="text-[10px] uppercase tracking-wide" style={{ color: UI_COLORS.heading }}>
-                        {progress ? STATUS_LABEL[progress.status] : 'Unknown'}
+                        {progress ? STATUS_LABEL[progress.status] : hasSchedule(flight) ? 'Unknown' : 'Live'}
                       </span>
                     </div>
                     <div className="text-xs text-neutral-400 tracking-wide">
-                      {flight.from} → {flight.to}
+                      {hasSchedule(flight) ? `${flight.from} → ${flight.to}` : 'Following live'}
                     </div>
                     {/* The date is what separates two entries for the same
                         flight number on different days — without it they are
                         the same three lines twice. */}
-                    {progress && (
+                    {progress && hasSchedule(flight) && (
                       <div className="text-[10px] text-neutral-500">
                         {formatDate(flight.departUtc, progress.origin.tz)}
                       </div>
@@ -208,8 +225,8 @@ export default function App() {
               <div className="max-w-sm">
                 <p className="text-neutral-300">No flights yet.</p>
                 <p className="mt-2 text-sm text-neutral-500 leading-relaxed">
-                  Add one with its number, the two airports and the times from your ticket, and this will show you where
-                  it is and how long is left.
+                  A flight number on its own is enough to follow an aircraft live. Add the airports and times as well
+                  and you also get its route, how far it has come and how long is left.
                 </p>
                 <button
                   type="button"
