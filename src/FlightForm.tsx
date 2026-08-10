@@ -172,6 +172,31 @@ export function FlightForm({
   const origin = findAirport(from);
   const destination = findAirport(to);
 
+  /**
+   * What this schedule means *right now* — already landed, already flying, or
+   * still to come.
+   *
+   * Entering a flight that has secretly already departed is the easiest mistake
+   * this form allows: set the time, leave the date on today, and a flight that
+   * takes off tomorrow evening is stored as one that took off this morning. The
+   * app then does exactly as it is told and shows it halfway across an ocean,
+   * with no hint that anything is wrong.
+   *
+   * Tracking a flight that is genuinely already in the air is a real thing to
+   * want, so this states the situation rather than blocking it.
+   */
+  const timing = useMemo(() => {
+    if (!origin || !destination || !departLocal || !arriveLocal) return null;
+    const depart = zonedWallClockToUtc(departLocal, origin.tz);
+    const arrive = zonedWallClockToUtc(arriveLocal, destination.tz);
+    if (!Number.isFinite(depart) || !Number.isFinite(arrive) || arrive <= depart) return null;
+    const now = Date.now();
+    if (depart > now) return null;
+    return arrive > now
+      ? { kind: 'airborne' as const, text: `Note: this departed ${formatDuration(now - depart)} ago, so it will show as already in the air.` }
+      : { kind: 'landed' as const, text: `Note: this flight landed ${formatDuration(now - arrive)} ago. Check the date if you meant a future flight.` };
+  }, [origin, destination, departLocal, arriveLocal]);
+
   // Live block time, so a mistyped date (the classic overnight-flight one, where
   // arrival is the next day) is visible before saving rather than after.
   const previewDuration = useMemo(() => {
@@ -269,6 +294,12 @@ export function FlightForm({
           className={inputClass}
         />
       </div>
+
+      {timing && (
+        <p className="text-xs leading-snug" style={{ color: UI_COLORS.danger }}>
+          {timing.text}
+        </p>
+      )}
 
       {error && (
         <p className="text-xs leading-snug" style={{ color: UI_COLORS.danger }} role="alert">
