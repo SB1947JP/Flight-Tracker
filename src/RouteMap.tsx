@@ -144,7 +144,10 @@ export function RouteMap({
     // dividing by zero and asking for infinite zoom.
     const spanX = Math.max(maxX - minX, 1e-4);
     const spanY = Math.max(maxY - minY, 1e-4);
-    const padding = 56;
+    // Padding scaled to the map, not a fixed 56px. On a phone the map is barely
+    // 224px tall, where a fixed inset ate half the height and cost a whole zoom
+    // level — a Dublin-to-London hop was framed as though it crossed an ocean.
+    const padding = Math.min(56, Math.max(14, Math.min(width, height) * 0.12));
     const usableW = Math.max(64, width - padding * 2);
     const usableH = Math.max(64, height - padding * 2);
     // A single point has no extent, so a fitted zoom would run to the maximum.

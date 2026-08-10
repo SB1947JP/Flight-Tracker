@@ -2,7 +2,7 @@ import { FormEvent, useMemo, useState } from 'react';
 import { ACCENT_BORDER, ACCENT_WASH, UI_COLORS } from './palette';
 import { Airport, findAirport, searchAirports } from './airports';
 import { Flight, newFlightId } from './flights';
-import { deviceZone, formatDuration, formatInDeviceZone, utcToZonedWallClock, zonedWallClockToUtc } from './time';
+import { clockDiffersFrom, formatDuration, formatInDeviceZone, utcToZonedWallClock, zonedWallClockToUtc } from './time';
 
 /**
  * Add/edit form for a flight.
@@ -126,8 +126,9 @@ function TimeField({
   onChange: (value: string) => void;
 }) {
   const utc = airport && value ? zonedWallClockToUtc(value, airport.tz) : NaN;
-  // No point telling someone in Sydney that 09:35 in Sydney is 09:35 for them.
-  const showEcho = Number.isFinite(utc) && airport !== undefined && airport.tz !== deviceZone();
+  // No point telling someone in Sydney that 09:35 in Sydney is 09:35 for them —
+  // nor someone in London that a Dublin time is the same time.
+  const showEcho = Number.isFinite(utc) && airport !== undefined && clockDiffersFrom(utc, airport.tz);
 
   return (
     <div>

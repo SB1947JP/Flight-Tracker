@@ -96,6 +96,25 @@ export function deviceZone(): string {
 }
 
 /**
+ * Whether an airport's clock actually differs from the reader's at a given
+ * moment — not whether the zones have different names.
+ *
+ * Europe/Dublin and Europe/London are different zones that have shown the same
+ * time since 1968. Comparing names put "that is 19:00 where you are" under a
+ * departure already displayed as 19:00, which is noise pretending to be help.
+ */
+export function clockDiffersFrom(utc: number, timeZone: string): boolean {
+  const here = new Intl.DateTimeFormat('en-GB', { hourCycle: 'h23', dateStyle: 'short', timeStyle: 'short' });
+  const there = new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    hourCycle: 'h23',
+    dateStyle: 'short',
+    timeStyle: 'short',
+  });
+  return here.format(utc) !== there.format(utc);
+}
+
+/**
  * The same instant on the reader's own clock, e.g. "Tue 11 Aug, 06:35".
  *
  * Shown beside every airport-local time. Entering times in each airport's local

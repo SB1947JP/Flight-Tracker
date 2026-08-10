@@ -1,7 +1,7 @@
 import { ACCENT_BORDER, ACCENT_WASH, UI_COLORS } from './palette';
 import { Flight, FlightProgress, PHASE_LABEL, STATUS_LABEL, ScheduledFlight, hasSchedule, resolveProgress } from './flights';
 import { RouteMap } from './RouteMap';
-import { deviceZone, formatClock, formatDate, formatDuration, formatInDeviceZone, formatZoneAbbr } from './time';
+import { clockDiffersFrom, formatClock, formatDate, formatDuration, formatInDeviceZone, formatZoneAbbr } from './time';
 import { FIX_FRESH_MS, LiveState } from './useLive';
 
 /** The tracking view for one flight: where it is, and when it gets there. */
@@ -159,7 +159,7 @@ function Timeline({ flight, progress, now }: { flight: ScheduledFlight; progress
           clock={formatClock(flight.departUtc, origin.tz)}
           date={formatDate(flight.departUtc, origin.tz)}
           zone={formatZoneAbbr(flight.departUtc, origin.tz)}
-          yours={origin.tz === deviceZone() ? undefined : formatInDeviceZone(flight.departUtc)}
+          yours={clockDiffersFrom(flight.departUtc, origin.tz) ? formatInDeviceZone(flight.departUtc) : undefined}
         />
         <div className="text-center pb-0.5">
           <div className="text-neutral-200 tabular-nums">{headline}</div>
@@ -172,7 +172,7 @@ function Timeline({ flight, progress, now }: { flight: ScheduledFlight; progress
           clock={formatClock(flight.arriveUtc, destination.tz)}
           date={formatDate(flight.arriveUtc, destination.tz)}
           zone={formatZoneAbbr(flight.arriveUtc, destination.tz)}
-          yours={destination.tz === deviceZone() ? undefined : formatInDeviceZone(flight.arriveUtc)}
+          yours={clockDiffersFrom(flight.arriveUtc, destination.tz) ? formatInDeviceZone(flight.arriveUtc) : undefined}
           alignRight
         />
       </div>
