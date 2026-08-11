@@ -1,5 +1,5 @@
 import { FormEvent, useMemo, useState } from 'react';
-import { ACCENT_BORDER, ACCENT_WASH, UI_COLORS } from './palette';
+import { UI_COLORS } from './palette';
 import { Airport, findAirport, searchAirports } from './airports';
 import { Flight, newFlightId } from './flights';
 import { clockDiffersFrom, formatDuration, formatInDeviceZone, utcToZonedWallClock, zonedWallClockToUtc } from './time';
@@ -14,10 +14,12 @@ import { clockDiffersFrom, formatDuration, formatInDeviceZone, utcToZonedWallClo
  */
 
 const inputClass =
-  'w-full rounded border border-neutral-700 bg-neutral-950 px-2 py-1.5 text-sm text-neutral-100 ' +
-  'placeholder:text-neutral-600 focus:outline-none focus:border-neutral-500';
+  'w-full rounded-md border bg-white px-2.5 py-2 text-sm text-neutral-900 ' +
+  'placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/15 focus:border-neutral-400';
 
-const labelClass = 'block text-[11px] uppercase tracking-wide mb-1';
+const inputStyle = { borderColor: '#E5E3DE' };
+
+const labelClass = 'block text-[10px] uppercase tracking-wider mb-1.5';
 
 /** IATA-code field with a search-as-you-type list of matching airports. */
 function AirportField({
@@ -38,7 +40,7 @@ function AirportField({
 
   return (
     <div>
-      <label htmlFor={id} className={labelClass} style={{ color: UI_COLORS.heading }}>
+      <label htmlFor={id} className={labelClass} style={{ color: UI_COLORS.muted }}>
         {label}
       </label>
       <div className="relative">
@@ -59,13 +61,14 @@ function AirportField({
           placeholder="e.g. SYD"
           autoComplete="off"
           spellCheck={false}
-          className={`${inputClass} uppercase tracking-widest`}
+          className={`${inputClass} uppercase tracking-widest`} style={inputStyle}
         />
 
         {/* Suggestions are suppressed once the typed text is itself a valid
             code, so picking "SYD" doesn't leave a list hanging over the form. */}
         {open && matches.length > 0 && !findAirport(query) && (
-          <ul className="absolute z-10 left-0 right-0 top-full mt-1 max-h-56 overflow-auto rounded border border-neutral-700 bg-neutral-900 shadow-lg">
+          <ul className="absolute z-10 left-0 right-0 top-full mt-1 max-h-56 overflow-auto rounded-md border bg-white shadow-lg"
+            style={inputStyle}>
             {matches.map((a: Airport) => (
               <li key={a.iata}>
                 <button
@@ -77,10 +80,10 @@ function AirportField({
                     setQuery('');
                     setOpen(false);
                   }}
-                  className="w-full text-left px-2 py-1.5 text-xs hover:bg-neutral-800"
+                  className="w-full text-left px-2.5 py-2 text-xs hover:bg-neutral-100"
                 >
-                  <span className="font-medium tracking-widest text-neutral-200">{a.iata}</span>{' '}
-                  <span className="text-neutral-400">
+                  <span className="font-medium tracking-widest text-neutral-900">{a.iata}</span>{' '}
+                  <span className="text-neutral-500">
                     {a.city}, {a.country}
                   </span>
                 </button>
@@ -92,7 +95,7 @@ function AirportField({
 
       <div className="mt-1 text-[11px] leading-tight min-h-[1.5rem]">
         {resolved ? (
-          <span className="text-neutral-400">
+          <span style={{ color: UI_COLORS.muted }}>
             {resolved.city} — {resolved.name}
           </span>
         ) : value.length > 0 ? (
@@ -132,7 +135,7 @@ function TimeField({
 
   return (
     <div>
-      <label htmlFor={id} className={labelClass} style={{ color: UI_COLORS.heading }}>
+      <label htmlFor={id} className={labelClass} style={{ color: UI_COLORS.muted }}>
         {label} {airport ? `— ${airport.iata} local time` : ''}
       </label>
       <input
@@ -140,9 +143,9 @@ function TimeField({
         type="datetime-local"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={inputClass}
+        className={inputClass} style={inputStyle}
       />
-      <div className="mt-1 text-[11px] leading-tight min-h-[1.25rem] text-neutral-500">
+      <div className="mt-1 text-[11px] leading-tight min-h-[1.25rem]" style={{ color: UI_COLORS.muted }}>
         {showEcho && <>That is {formatInDeviceZone(utc)} where you are.</>}
       </div>
     </div>
@@ -257,7 +260,7 @@ export function FlightForm({
   return (
     <form onSubmit={submit} className="space-y-4">
       <div>
-        <label htmlFor="flight-number" className={labelClass} style={{ color: UI_COLORS.heading }}>
+        <label htmlFor="flight-number" className={labelClass} style={{ color: UI_COLORS.muted }}>
           Flight
         </label>
         <input
@@ -266,19 +269,19 @@ export function FlightForm({
           onChange={(e) => setNumber(e.target.value)}
           placeholder="e.g. QF63"
           autoComplete="off"
-          className={`${inputClass} uppercase`}
+          className={`${inputClass} uppercase`} style={inputStyle}
         />
       </div>
 
-      <p className="text-[11px] text-neutral-500 leading-snug -mt-2">
+      <p className="text-[11px] leading-snug -mt-2" style={{ color: UI_COLORS.muted }}>
         That is all you need to follow it live — the aircraft broadcasts its own position, altitude and speed.
       </p>
 
-      <div className="pt-1 border-t border-neutral-800">
-        <p className="pt-3 text-[11px] uppercase tracking-wide" style={{ color: UI_COLORS.heading }}>
-          Schedule <span className="normal-case tracking-normal text-neutral-600">— optional</span>
+      <div className="pt-1 border-t" style={{ borderColor: UI_COLORS.hairline }}>
+        <p className="pt-3 text-[11px] uppercase tracking-wide" style={{ color: UI_COLORS.muted }}>
+          Schedule <span className="normal-case tracking-normal" style={{ color: UI_COLORS.muted }}>— optional</span>
         </p>
-        <p className="mt-1 mb-3 text-[11px] text-neutral-500 leading-snug">
+        <p className="mt-1 mb-3 text-[11px] leading-snug" style={{ color: UI_COLORS.muted }}>
           Add the airports and times and you also get the route drawn, how far it has come, and how long is left —
           including while the aircraft is out of radio range.
         </p>
@@ -306,33 +309,33 @@ export function FlightForm({
         />
       </div>
 
-      <p className="text-[11px] text-neutral-500 leading-snug -mt-2">
+      <p className="text-[11px] leading-snug -mt-2" style={{ color: UI_COLORS.muted }}>
         Enter the times exactly as printed on the ticket — each one is the time on the clock{' '}
-        <em className="not-italic text-neutral-300">at that airport</em>, not on yours.
+        <em className="not-italic" style={{ color: UI_COLORS.ink }}>at that airport</em>, not on yours.
         {previewDuration !== null && (
           <>
             {' '}
             That makes the flight{' '}
-            <span className="text-neutral-300 tabular-nums">{formatDuration(previewDuration)}</span> long.
+            <span className="tabular-nums" style={{ color: UI_COLORS.ink }}>{formatDuration(previewDuration)}</span> long.
           </>
         )}
       </p>
 
       <div>
-        <label htmlFor="flight-note" className={labelClass} style={{ color: UI_COLORS.heading }}>
-          Note <span className="normal-case tracking-normal text-neutral-600">(optional)</span>
+        <label htmlFor="flight-note" className={labelClass} style={{ color: UI_COLORS.muted }}>
+          Note <span className="normal-case tracking-normal" style={{ color: UI_COLORS.muted }}>(optional)</span>
         </label>
         <input
           id="flight-note"
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder="Seat 42K, terminal 1…"
-          className={inputClass}
+          className={inputClass} style={inputStyle}
         />
       </div>
 
       {duplicate && (
-        <p className="text-xs leading-snug text-neutral-400">
+        <p className="text-xs leading-snug" style={{ color: UI_COLORS.muted }}>
           You already have a {duplicate.number} from {duplicate.from} to {duplicate.to} saved. Adding this makes a
           second one — edit the existing flight instead if you meant to correct it.
         </p>
@@ -353,15 +356,16 @@ export function FlightForm({
       <div className="flex gap-2 pt-1">
         <button
           type="submit"
-          className="px-3 py-1.5 rounded text-sm border"
-          style={{ borderColor: ACCENT_BORDER, backgroundColor: ACCENT_WASH, color: UI_COLORS.accent }}
+          className="px-4 py-2 rounded-full text-sm"
+          style={{ backgroundColor: UI_COLORS.ink, color: UI_COLORS.surface }}
         >
           {existing ? 'Save changes' : 'Track flight'}
         </button>
         <button
           type="button"
           onClick={onCancel}
-          className="px-3 py-1.5 rounded text-sm border border-neutral-700 text-neutral-400 hover:text-neutral-200 hover:border-neutral-600"
+          className="px-4 py-2 rounded-full text-sm hover:bg-black/5"
+          style={{ color: UI_COLORS.muted }}
         >
           Cancel
         </button>

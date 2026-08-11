@@ -12,6 +12,14 @@ The consequence of "volunteers on the ground" is the thing to understand about t
 
 So a gap is the normal condition, not a fault. When the signal drops the app keeps the last known position, says how long ago it was, and goes on estimating from the schedule — a great circle flown at a constant rate. An estimate cannot know about holding, diversions or delays, so figures measured from the aircraft are marked with a `·` and the rest are not.
 
+## Look
+
+Light, warm and quiet, with exactly one saturated colour in it — the aircraft. Everything else is ink, grey and hairline, and state is signalled by weight and position rather than by giving each condition its own hue.
+
+The scheme is light for a structural reason rather than a fashionable one: the map is the content, and on a dark interface the map was also the brightest thing on screen, so the chrome and the content competed for attention. On a paper-coloured page the map is the *darkest* thing, and the eye goes there without being directed.
+
+`src/palette.ts` holds the whole vocabulary — seven values. If a new colour seems necessary, it probably isn't.
+
 ## The three decisions worth knowing
 
 **The map has two layers.** On top, OpenStreetMap raster tiles — real coastlines, place names, terrain. Underneath, drawn first and covered when the tiles arrive, the bundled 110m coastline (`src/coastline.ts`, Natural Earth, public domain) as vector paths. Offline, at altitude, or behind a blocker, the tiles simply don't appear and the drawn outline carries the route instead.

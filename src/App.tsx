@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ACCENT_BORDER, ACCENT_WASH, UI_COLORS } from './palette';
+import { UI_COLORS } from './palette';
 import { Flight, STATUS_LABEL, hasSchedule, loadFlights, resolveProgress, saveFlights } from './flights';
 import { useLive } from './useLive';
 import { FlightDetail } from './FlightDetail';
 import { FlightForm } from './FlightForm';
-import { formatDate, formatDuration } from './time';
+import { formatDate } from './time';
 
 /**
  * Which flight was last being looked at.
@@ -92,13 +92,14 @@ export default function App() {
     ordered.find((f) => hasSchedule(f) && f.departUtc > now) ??
     ordered[ordered.length - 1];
 
-  // Live tracking follows whatever is on screen, and only while it's flying —
-  // see `useLive` for why the polling is kept as narrow as it is.
   const selectedProgress = selected ? resolveProgress(selected, now) : null;
   // With no schedule there is no departure to wait for, so the search runs
   // whenever such a flight is on screen — that is the entire point of adding
   // one by number alone.
-  const live = useLive(selected, selected !== undefined && (!hasSchedule(selected) || selectedProgress?.status === 'enroute'));
+  const live = useLive(
+    selected,
+    selected !== undefined && (!hasSchedule(selected) || selectedProgress?.status === 'enroute'),
+  );
 
   const save = (flight: Flight) => {
     setFlights((current) => {
@@ -118,129 +119,116 @@ export default function App() {
   };
 
   return (
-    <div className="h-full flex flex-col bg-neutral-950 text-neutral-100">
-      <header className="shrink-0 flex items-baseline justify-between gap-4 px-4 py-3 border-b border-neutral-800">
-        <h1 className="text-sm uppercase tracking-widest" style={{ color: UI_COLORS.heading }}>
-          Flight tracker
+    <div className="h-full flex flex-col" style={{ backgroundColor: UI_COLORS.page, color: UI_COLORS.ink }}>
+      <header
+        className="shrink-0 flex items-center justify-between gap-4 px-4 h-12 border-b"
+        style={{ borderColor: UI_COLORS.hairline }}
+      >
+        <h1 className="text-[11px] uppercase tracking-[0.18em]" style={{ color: UI_COLORS.muted }}>
+          Flight Tracker
         </h1>
-        {/* The per-flight bar says which of the two any given number is; this
-            just sets the expectation that both exist. */}
-        <p className="text-xs text-neutral-600">Live where there's coverage · schedule elsewhere</p>
+        <button
+          type="button"
+          onClick={() => setEditing({ mode: 'new' })}
+          className="text-sm px-2.5 py-1 -mr-1 rounded hover:bg-black/5 active:bg-black/10"
+        >
+          + Add
+        </button>
       </header>
 
-      <div className="flex-1 min-h-0 flex flex-col md:flex-row">
-        <aside className="md:w-72 shrink-0 border-b md:border-b-0 md:border-r border-neutral-800 flex flex-col min-h-0">
-          <div className="p-3">
-            <button
-              type="button"
-              onClick={() => setEditing({ mode: 'new' })}
-              className="w-full px-3 py-1.5 rounded text-sm border"
-              style={{ borderColor: ACCENT_BORDER, backgroundColor: ACCENT_WASH, color: UI_COLORS.accent }}
-            >
-              Add a flight
-            </button>
-          </div>
+      {/* The list of flights is a row of names, not a column of cards, and it
+          disappears entirely when there is only one flight — which is the usual
+          case. A list of one is pure furniture. */}
+      {!editing && ordered.length > 1 && (
+        <nav
+          className="shrink-0 flex gap-1 px-3 py-2 overflow-x-auto border-b"
+          style={{ borderColor: UI_COLORS.hairline }}
+        >
+          {ordered.map((flight) => {
+            const progress = resolveProgress(flight, now);
+            const isSelected = selected?.id === flight.id;
+            const isLive = progress ? progress.status === 'enroute' : true;
+            return (
+              <button
+                key={flight.id}
+                type="button"
+                onClick={() => {
+                  setSelectedId(flight.id);
+                  setEditing(null);
+                }}
+                aria-current={isSelected ? 'true' : undefined}
+                className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm whitespace-nowrap"
+                style={
+                  isSelected
+                    ? { backgroundColor: UI_COLORS.ink, color: UI_COLORS.surface }
+                    : { color: UI_COLORS.muted }
+                }
+              >
+                {/* A filled dot for in the air, hollow for not — state without a
+                    second colour or a second word. */}
+                <span
+                  aria-hidden="true"
+                  className="w-1.5 h-1.5 rounded-full shrink-0"
+                  style={
+                    isLive
+                      ? { backgroundColor: isSelected ? UI_COLORS.surface : UI_COLORS.ink }
+                      : { border: `1px solid ${isSelected ? UI_COLORS.surface : UI_COLORS.hairline}` }
+                  }
+                />
+                {flight.number}
+                {progress && hasSchedule(flight) && (
+                  <span className="text-[11px] opacity-60">{formatDate(flight.departUtc, progress.origin.tz)}</span>
+                )}
+                {!progress && !hasSchedule(flight) && (
+                  <span className="text-[11px] opacity-60">{STATUS_LABEL.enroute}</span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+      )}
 
-          {/* Capped on narrow screens: stacked vertically, an uncapped list
-              would push the flight you came to look at below the fold. */}
-          <ul className="flex-1 min-h-0 overflow-auto px-2 pb-3 space-y-1 max-h-48 md:max-h-none">
-            {ordered.map((flight) => {
-              const progress = resolveProgress(flight, now);
-              const isSelected = selected?.id === flight.id;
-              return (
-                <li key={flight.id}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedId(flight.id);
-                      setEditing(null);
-                    }}
-                    className="w-full text-left px-2.5 py-2 rounded border transition-colors"
-                    style={
-                      isSelected
-                        ? { borderColor: ACCENT_BORDER, backgroundColor: ACCENT_WASH }
-                        : { borderColor: 'transparent' }
-                    }
-                  >
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="text-sm text-neutral-100">{flight.number}</span>
-                      <span className="text-[10px] uppercase tracking-wide" style={{ color: UI_COLORS.heading }}>
-                        {progress ? STATUS_LABEL[progress.status] : hasSchedule(flight) ? 'Unknown' : 'Live'}
-                      </span>
-                    </div>
-                    <div className="text-xs text-neutral-400 tracking-wide">
-                      {hasSchedule(flight) ? `${flight.from} → ${flight.to}` : 'Following live'}
-                    </div>
-                    {/* The date is what separates two entries for the same
-                        flight number on different days — without it they are
-                        the same three lines twice. */}
-                    {progress && hasSchedule(flight) && (
-                      <div className="text-[10px] text-neutral-500">
-                        {formatDate(flight.departUtc, progress.origin.tz)}
-                      </div>
-                    )}
-                    {progress && (
-                      <div className="mt-1.5 h-0.5 rounded-full" style={{ backgroundColor: UI_COLORS.muted }}>
-                        <div
-                          className="h-full rounded-full"
-                          style={{ width: `${progress.fraction * 100}%`, backgroundColor: UI_COLORS.accent }}
-                        />
-                      </div>
-                    )}
-                    {progress?.status === 'enroute' && (
-                      <div className="mt-1 text-[10px] text-neutral-500 tabular-nums">
-                        {formatDuration(progress.remainingMs)} left
-                      </div>
-                    )}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </aside>
-
-        <main className="flex-1 min-h-0 overflow-auto p-4">
-          {editing ? (
-            <div className="max-w-lg">
-              <h2 className="text-sm uppercase tracking-widest mb-4" style={{ color: UI_COLORS.heading }}>
-                {editing.mode === 'new' ? 'New flight' : `Edit ${editing.flight.number}`}
-              </h2>
-              <FlightForm
-                existing={editing.mode === 'edit' ? editing.flight : undefined}
-                others={ordered.filter((f) => f.id !== (editing.mode === 'edit' ? editing.flight.id : null))}
-                onSave={save}
-                onCancel={() => setEditing(null)}
-              />
-            </div>
-          ) : selected ? (
-            <FlightDetail
-              flight={selected}
-              now={now}
-              live={live}
-              onEdit={() => setEditing({ mode: 'edit', flight: selected })}
-              onDelete={() => remove(selected.id)}
+      <main className="flex-1 min-h-0 overflow-auto">
+        {editing ? (
+          <div className="max-w-lg mx-auto px-4 py-5">
+            <h2 className="text-[11px] uppercase tracking-[0.18em] mb-5" style={{ color: UI_COLORS.muted }}>
+              {editing.mode === 'new' ? 'New flight' : `Edit ${editing.flight.number}`}
+            </h2>
+            <FlightForm
+              existing={editing.mode === 'edit' ? editing.flight : undefined}
+              others={ordered.filter((f) => f.id !== (editing.mode === 'edit' ? editing.flight.id : null))}
+              onSave={save}
+              onCancel={() => setEditing(null)}
             />
-          ) : (
-            <div className="h-full flex items-center justify-center text-center">
-              <div className="max-w-sm">
-                <p className="text-neutral-300">No flights yet.</p>
-                <p className="mt-2 text-sm text-neutral-500 leading-relaxed">
-                  A flight number on its own is enough to follow an aircraft live. Add the airports and times as well
-                  and you also get its route, how far it has come and how long is left.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setEditing({ mode: 'new' })}
-                  className="mt-4 px-3 py-1.5 rounded text-sm border"
-                  style={{ borderColor: ACCENT_BORDER, backgroundColor: ACCENT_WASH, color: UI_COLORS.accent }}
-                >
-                  Add a flight
-                </button>
-              </div>
+          </div>
+        ) : selected ? (
+          <FlightDetail
+            flight={selected}
+            now={now}
+            live={live}
+            onEdit={() => setEditing({ mode: 'edit', flight: selected })}
+            onDelete={() => remove(selected.id)}
+          />
+        ) : (
+          <div className="h-full flex items-center justify-center text-center px-6">
+            <div className="max-w-xs">
+              <p className="text-lg">No flights yet</p>
+              <p className="mt-2 text-sm leading-relaxed" style={{ color: UI_COLORS.muted }}>
+                A flight number on its own is enough to follow an aircraft live. Add the airports and times too and you
+                also get its route and how long is left.
+              </p>
+              <button
+                type="button"
+                onClick={() => setEditing({ mode: 'new' })}
+                className="mt-5 px-4 py-2 rounded-full text-sm"
+                style={{ backgroundColor: UI_COLORS.ink, color: UI_COLORS.surface }}
+              >
+                Add a flight
+              </button>
             </div>
-          )}
-        </main>
-      </div>
+          </div>
+        )}
+      </main>
     </div>
   );
 }

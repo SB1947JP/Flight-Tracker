@@ -1,6 +1,6 @@
 import { PointerEvent as ReactPointerEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { COASTLINE } from './coastline';
-import { UI_COLORS } from './palette';
+import { FALLBACK_COAST, FALLBACK_LAND, ROUTE_FLOWN, ROUTE_REMAINING, UI_COLORS } from './palette';
 import { LatLon, samplePath } from './geo';
 import { FlightProgress } from './flights';
 
@@ -33,64 +33,36 @@ import { FlightProgress } from './flights';
  */
 
 /**
- * The aircraft marker: nose at the top, symmetric about x, roughly 32 units long
- * against a 27-unit span — deliberately longer than it is wide, which is what
- * makes it read as an airliner rather than a dart.
+ * The aircraft marker: an airliner seen from above, nose at the top.
  *
- * Curves at the nose and tail, straight swept edges through the wings — which is
- * what makes it read as an aeroplane at 20 pixels rather than as an arrowhead.
+ * Long fuselage, swept wings with engines slung under them, a separate
+ * tailplane, and a tail cut flat across the back — the shape every flight
+ * tracking site converged on, and the notes below are why they did.
  *
- * An airliner seen from above, in the manner of the markers on the big flight
- * tracking sites: long fuselage, swept wings with engines slung under them, and
- * a separate tailplane at the back.
+ * **It has to survive rotation.** A marker turns to face its heading, and that
+ * is the whole difficulty; judging one upright hides every problem it has.
+ * Earlier versions were drawn from the aeroplane glyph a phone shows for flight
+ * mode — wings and tail merged into one shape, no engines. That is a fine icon
+ * precisely because it is only ever drawn at one angle. Rotated to 120-150
+ * degrees it stopped reading as an aeroplane and became a star. The separate
+ * tailplane and the engines are what give the eye enough landmarks to find the
+ * aircraft's axis at any angle.
  *
- * This shape solves a problem several earlier attempts had. Those were drawn
- * from the aeroplane glyph a phone shows for flight mode — one shape, wings
- * and tail merged, and no engines — which is a fine icon precisely because it
- * is only ever drawn at one angle. Rotated to a heading it lost its read;
- * around 120-150 degrees it stopped looking like an aeroplane and started
- * looking like a star. The separate tailplane and the engines give the eye
- * enough landmarks to find the aircraft's axis at any angle, which is why the
- * tracking sites all draw it this way.
+ * **The long nose is the only asymmetry**, and so the only thing distinguishing
+ * front from back. Without it a southbound flight — half of them — points down
+ * the screen and stops looking like an aircraft at all.
  *
- * Yellow with a dark outline, which is what every flight tracker uses and is
- * therefore the pairing people already read as "the aeroplane". It is also the
- * combination that holds up over map tiles darkened to half brightness: the
- * yellow separates from pale sea, pale land and dark city alike, and a dark
- * line stays crisp on all three where a white one bulks the shape out and
- * blurs its edges. Checked over all three.
+ * **Nothing is thinner than five units.** The outline is drawn on both sides of
+ * every edge and eats about 1.5 units from any section it borders; a wing tip
+ * three units deep has no fill left and renders as two lines.
  *
- * Two proportions here exist because of *rotation*, which is the thing that
- * makes a map marker hard and that judging it upright completely hides.
+ * Yellow with a dark outline: what people already read as "the aeroplane", and
+ * the pairing that holds up over pale sea, pale land and dark city alike.
  *
- * The tailplane is small and set back, with a clear run of fuselage between it
- * and the wing. An earlier version had a tail nearly as wide as the wings and
- * immediately behind them; the deep V trapped between the two read as a star
- * rather than an aircraft the moment the marker turned away from vertical.
- *
- * The nose is long. It is the only thing distinguishing front from back on a
- * shape that is otherwise near-symmetric, and without that asymmetry a marker
- * pointing down the screen — a southbound flight, which is half of them — stops
- * looking like an aeroplane at all.
- *
- * Everything is thicker than a drawing wants, because a 0.75 outline is drawn
- * on both sides of every edge and therefore eats about 1.5 units out of any
- * section it borders. A wing tip 3 units deep has essentially no fill left; it
- * renders as two white lines and the aircraft reads as a star. Nothing here is
- * thinner than 5.
- *
- * Candidates were compared side by side at the size the marker actually draws
- * AND at ten times that, at headings of 0, 60, 90, 120, 150 and 210. Every
- * earlier version passed inspection upright and failed at 150 — which is worth
- * remembering before adjusting any of these numbers. The tail went through a notched version first, which is faithful to
- * the glyph at poster size and at twenty-two pixels reads as jagged — a cluster
- * of spikes with a separate tailplane, a letter W once the notch was deepened.
- * A flat trailing edge says "tail" at this size with none of that noise. That
- * icon gets away with hairline proportions because it is solid white
- * on a coloured disc; this one sits on map tiles and needs an outline, and an
- * outline eats into the body from both sides. So the fuselage is a little
- * fuller than the original — enough that it stays a shape rather than becoming
- * two white lines with a sliver of colour between them.
+ * Candidates were compared side by side at the size this actually draws AND at
+ * ten times that, at 0, 60, 90, 120, 150 and 210 degrees. Every earlier version
+ * passed inspection upright and failed at 150 — worth remembering before
+ * adjusting any of these numbers.
  */
 const PLANE_PATH = [
   'M0 -19',
@@ -453,10 +425,9 @@ export function RouteMap({
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
-      className={`overflow-hidden bg-neutral-950 cursor-grab active:cursor-grabbing touch-none select-none ${
-        expanded
-          ? 'fixed inset-0 z-50 w-screen h-screen'
-          : 'relative w-full h-full min-h-[16rem] rounded border border-neutral-700'
+      style={{ backgroundColor: FALLBACK_LAND }}
+      className={`overflow-hidden cursor-grab active:cursor-grabbing touch-none select-none ${
+        expanded ? 'fixed inset-0 z-50 w-screen h-screen' : 'relative w-full h-full min-h-[16rem] rounded-lg'
       }`}
     >
       {/* Fallback layer, drawn first and covered by the tiles when they load. */}
@@ -465,8 +436,8 @@ export function RouteMap({
           <g transform={`translate(${width / 2} ${height / 2}) scale(${TILE_SIZE}) translate(${-view.x} ${-view.y})`}>
             <path
               d={landPath}
-              fill={UI_COLORS.land}
-              stroke={UI_COLORS.coast}
+              fill={FALLBACK_LAND}
+              stroke={FALLBACK_COAST}
               strokeWidth={1 / TILE_SIZE}
               fillRule="nonzero"
             />
@@ -505,7 +476,13 @@ export function RouteMap({
             top: t.top,
             width: TILE_SIZE,
             height: TILE_SIZE,
-            filter: 'brightness(0.5) saturate(0.55) contrast(1.1)',
+            // Barely touched, now that the page around the map is light. A
+            // little desaturation stops the map's greens and blues competing
+            // with the one thing here allowed to be colourful; nothing is
+            // darkened, because the route line is ink and needs pale ground
+            // under it. Opacity is avoided — the fallback coastline sits
+            // underneath and transparency would let it show through.
+            filter: 'saturate(0.75)',
           }}
         />
       ))}
@@ -524,7 +501,7 @@ export function RouteMap({
           {progress && <polyline
             points={toPolyline(projected.slice(splitIndex))}
             fill="none"
-            stroke={UI_COLORS.muted}
+            stroke={ROUTE_REMAINING}
             strokeWidth={2}
             strokeDasharray="5 5"
             strokeLinecap="round"
@@ -533,7 +510,7 @@ export function RouteMap({
           {progress && <polyline
             points={toPolyline(projected.slice(0, splitIndex + 1))}
             fill="none"
-            stroke={UI_COLORS.accent}
+            stroke={ROUTE_FLOWN}
             strokeWidth={2.25}
             strokeLinecap="round"
           />}
@@ -546,14 +523,14 @@ export function RouteMap({
             : []
           ).map((end) => (
             <g key={end.label}>
-              <circle cx={end.px.left} cy={end.px.top} r={4} fill="#0a0a0a" stroke={UI_COLORS.accent} strokeWidth={1.75} />
+              <circle cx={end.px.left} cy={end.px.top} r={4} fill={UI_COLORS.surface} stroke={ROUTE_FLOWN} strokeWidth={1.75} />
               <text
                 x={end.px.left}
                 y={end.px.top - 10}
                 textAnchor="middle"
-                fill={UI_COLORS.accent}
+                fill={ROUTE_FLOWN}
                 className="text-[11px] font-medium"
-                style={{ paintOrder: 'stroke', stroke: '#0a0a0a', strokeWidth: 3 }}
+                style={{ paintOrder: 'stroke', stroke: UI_COLORS.surface, strokeWidth: 3.5 }}
               >
                 {end.label}
               </text>
@@ -571,7 +548,7 @@ export function RouteMap({
               cy={schedulePx.top}
               r={3.5}
               fill="none"
-              stroke={UI_COLORS.muted}
+              stroke={ROUTE_REMAINING}
               strokeWidth={1.5}
               strokeDasharray="2 2"
             />
@@ -602,7 +579,7 @@ export function RouteMap({
         </svg>
       )}
 
-      <div className="absolute top-1 right-1 flex flex-col gap-1">
+      <div className="absolute top-2 right-2 flex flex-col gap-1.5">
         {[
           { label: '+', delta: 1, title: 'Zoom in' },
           { label: '−', delta: -1, title: 'Zoom out' },
@@ -613,7 +590,7 @@ export function RouteMap({
             onClick={() => changeZoom(b.delta)}
             title={b.title}
             aria-label={b.title}
-            className="w-6 h-6 flex items-center justify-center rounded bg-neutral-900/85 border border-neutral-600 text-neutral-200 text-sm leading-none hover:bg-neutral-800"
+            className="w-7 h-7 flex items-center justify-center rounded-md bg-white/90 shadow-sm text-neutral-800 text-sm leading-none hover:bg-white"
           >
             {b.label}
           </button>
@@ -623,10 +600,11 @@ export function RouteMap({
           onClick={fit}
           title="Fit route"
           aria-label="Fit route"
-          className="w-6 h-6 flex items-center justify-center rounded bg-neutral-900/85 border border-neutral-600 text-neutral-200 hover:bg-neutral-800"
+          className="w-7 h-7 flex items-center justify-center rounded-md bg-white/90 shadow-sm text-neutral-800 hover:bg-white"
         >
           <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <path d="M1.5 5V1.5H5M11 1.5h3.5V5M14.5 11v3.5H11M5 14.5H1.5V11" strokeLinecap="round" />
+            <circle cx="8" cy="8" r="3" />
+            <path d="M8 1v2.2M8 12.8V15M1 8h2.2M12.8 8H15" strokeLinecap="round" />
           </svg>
         </button>
         <button
@@ -634,7 +612,7 @@ export function RouteMap({
           onClick={toggleExpanded}
           title={expanded ? 'Leave full screen' : 'Full screen'}
           aria-label={expanded ? 'Leave full screen' : 'Full screen'}
-          className="w-6 h-6 flex items-center justify-center rounded bg-neutral-900/85 border border-neutral-600 text-neutral-200 hover:bg-neutral-800"
+          className="w-7 h-7 flex items-center justify-center rounded-md bg-white/90 shadow-sm text-neutral-800 hover:bg-white"
         >
           <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
             {expanded ? (
@@ -647,13 +625,13 @@ export function RouteMap({
       </div>
 
       {/* OpenStreetMap's tile usage policy requires visible attribution. */}
-      <div className="absolute bottom-0 right-0 px-1 text-[9px] leading-tight bg-neutral-950/75 text-neutral-400">
+      <div className="absolute bottom-0 right-0 px-1 text-[9px] leading-tight bg-white/75 text-neutral-500">
         ©{' '}
         <a
           href="https://www.openstreetmap.org/copyright"
           target="_blank"
           rel="noreferrer noopener"
-          className="underline hover:text-neutral-200"
+          className="underline hover:text-neutral-800"
         >
           OpenStreetMap
         </a>
