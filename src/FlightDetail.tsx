@@ -72,7 +72,7 @@ export function FlightDetail({
   // times ended up a thousand pixels apart, which is not a line anyone reads as
   // a pair.
   return (
-    <div className="flex flex-col h-full min-h-0 w-full max-w-4xl mx-auto">
+    <div className="flex flex-col min-h-full w-full max-w-4xl mx-auto">
       <div className="px-4 pt-4 pb-3 flex flex-col gap-3">
         <Heading flight={flight} progress={progress} onEdit={onEdit} onDelete={onDelete} />
         {hasSchedule(flight) && progress ? (
@@ -85,9 +85,17 @@ export function FlightDetail({
         <Signal live={live} status={progress?.status} now={now} isLive={isLive} />
       </div>
 
-      {/* The map gets whatever height is left, and no less than a third of a
-          phone screen. It is the reason the page exists. */}
-      <div className="flex-1 min-h-[18rem] px-4">
+      {/* The map takes whatever height is left over. Its minimum is deliberately
+          modest: at 18rem it was taller than the space left on a small phone,
+          which pushed the figures below off the bottom of a page that could not
+          scroll. Given room it grows; given none it yields.
+          `flex` on the wrapper is what makes the growing half work: the map asks
+          for `height: 100%`, and a percentage height resolves against nothing
+          when the parent's own height came from flex-grow rather than from a
+          stated value. As a flex line it is stretched to fit instead, so on a
+          tall phone the leftover space goes to the map rather than opening a
+          blank gap above the figures. */}
+      <div className="flex-1 min-h-[13rem] px-4 flex">
         <RouteMap progress={progress} livePosition={shownPosition} />
       </div>
 

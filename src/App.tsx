@@ -188,7 +188,7 @@ export default function App() {
         </nav>
       )}
 
-      <main className="flex-1 min-h-0 overflow-auto">
+      <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden [-webkit-overflow-scrolling:touch]">
         {editing ? (
           <div className="max-w-lg mx-auto px-4 py-5">
             <h2 className="text-[11px] uppercase tracking-[0.18em] mb-5" style={{ color: UI_COLORS.muted }}>

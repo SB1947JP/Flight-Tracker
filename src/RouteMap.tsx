@@ -352,6 +352,12 @@ export function RouteMap({
   const { width, height } = size;
   const zoom = view?.zoom ?? MIN_ZOOM;
 
+  // On a short phone the four controls in one column are taller than the map
+  // itself, so the last of them hangs off the bottom edge. Folded into a 2×2
+  // block they fit, at full size — shrinking the buttons was the thing asked
+  // against.
+  const stackedControls = height === 0 || height >= 232;
+
   // Project once, then split into flown/remaining at the aircraft. Projecting
   // the two halves separately would let them unwrap onto different copies of
   // the world and tear the line apart at the antimeridian.
@@ -427,7 +433,11 @@ export function RouteMap({
       onPointerCancel={endDrag}
       style={{ backgroundColor: FALLBACK_LAND }}
       className={`overflow-hidden cursor-grab active:cursor-grabbing touch-none select-none ${
-        expanded ? 'fixed inset-0 z-50 w-screen h-screen' : 'relative w-full h-full min-h-[16rem] rounded-lg'
+        // Not `h-full`: this sits in a flex wrapper and is stretched to it. A
+        // stated `height: 100%` would resolve against a parent whose own height
+        // came from flex-grow, which is not a height a percentage can be taken
+        // of — and it would suppress the stretch that does work.
+        expanded ? 'fixed inset-0 z-50 w-screen h-screen' : 'relative w-full min-h-[13rem] rounded-lg'
       }`}
     >
       {/* Fallback layer, drawn first and covered by the tiles when they load. */}
@@ -579,7 +589,11 @@ export function RouteMap({
         </svg>
       )}
 
-      <div className="absolute top-2.5 right-2.5 flex flex-col gap-2">
+      <div
+        className={`absolute top-2.5 right-2.5 gap-2 ${
+          stackedControls ? 'flex flex-col' : 'grid grid-cols-2'
+        }`}
+      >
         {[
           { label: '+', delta: 1, title: 'Zoom in' },
           { label: '−', delta: -1, title: 'Zoom out' },

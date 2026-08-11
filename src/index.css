@@ -10,6 +10,20 @@ body {
   overscroll-behavior: none;
 }
 
+/* The height a phone actually shows.
+ *
+ * `100%` resolves against the *large* viewport — the window as it is with the
+ * browser's address bar and toolbar hidden. While they are showing, which is
+ * most of the time, the visible area is 60-100px shorter, so a layout sized to
+ * fill the screen quietly ran off the bottom of it. `dvh` is the height that is
+ * actually visible, and it updates as the toolbars come and go. */
+@supports (height: 100dvh) {
+  html,
+  body {
+    height: 100dvh;
+  }
+}
+
 /* Scales every rem-based Tailwind text utility down proportionally, app-wide,
    rather than editing each component's size class. */
 html {
