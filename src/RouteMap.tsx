@@ -579,7 +579,7 @@ export function RouteMap({
         </svg>
       )}
 
-      <div className="absolute top-2 right-2 flex flex-col gap-1.5">
+      <div className="absolute top-2.5 right-2.5 flex flex-col gap-2">
         {[
           { label: '+', delta: 1, title: 'Zoom in' },
           { label: '−', delta: -1, title: 'Zoom out' },
@@ -590,7 +590,7 @@ export function RouteMap({
             onClick={() => changeZoom(b.delta)}
             title={b.title}
             aria-label={b.title}
-            className="w-7 h-7 flex items-center justify-center rounded-md bg-white/90 shadow-sm text-neutral-800 text-sm leading-none hover:bg-white"
+            className="w-[42px] h-[42px] flex items-center justify-center rounded-lg bg-white/95 shadow-sm text-neutral-800 text-lg leading-none hover:bg-white active:bg-neutral-100"
           >
             {b.label}
           </button>
@@ -600,9 +600,9 @@ export function RouteMap({
           onClick={fit}
           title="Fit route"
           aria-label="Fit route"
-          className="w-7 h-7 flex items-center justify-center rounded-md bg-white/90 shadow-sm text-neutral-800 hover:bg-white"
+          className="w-[42px] h-[42px] flex items-center justify-center rounded-lg bg-white/95 shadow-sm text-neutral-800 hover:bg-white active:bg-neutral-100"
         >
-          <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <svg viewBox="0 0 16 16" className="w-[18px] h-[18px]" fill="none" stroke="currentColor" strokeWidth="1.5">
             <circle cx="8" cy="8" r="3" />
             <path d="M8 1v2.2M8 12.8V15M1 8h2.2M12.8 8H15" strokeLinecap="round" />
           </svg>
@@ -612,9 +612,9 @@ export function RouteMap({
           onClick={toggleExpanded}
           title={expanded ? 'Leave full screen' : 'Full screen'}
           aria-label={expanded ? 'Leave full screen' : 'Full screen'}
-          className="w-7 h-7 flex items-center justify-center rounded-md bg-white/90 shadow-sm text-neutral-800 hover:bg-white"
+          className="w-[42px] h-[42px] flex items-center justify-center rounded-lg bg-white/95 shadow-sm text-neutral-800 hover:bg-white active:bg-neutral-100"
         >
-          <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <svg viewBox="0 0 16 16" className="w-[18px] h-[18px]" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
             {expanded ? (
               <path d="M6.5 1.5v5h-5M9.5 14.5v-5h5M1.5 9.5h5v5M14.5 6.5h-5v-5" />
             ) : (

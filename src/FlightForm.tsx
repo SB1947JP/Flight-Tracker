@@ -134,7 +134,7 @@ function TimeField({
   const showEcho = Number.isFinite(utc) && airport !== undefined && clockDiffersFrom(utc, airport.tz);
 
   return (
-    <div>
+    <div className="min-w-0">
       <label htmlFor={id} className={labelClass} style={{ color: UI_COLORS.muted }}>
         {label} {airport ? `— ${airport.iata} local time` : ''}
       </label>
@@ -287,12 +287,20 @@ export function FlightForm({
         </p>
 
         <div className="grid grid-cols-2 gap-3">
-          <AirportField id="flight-from" label="From" value={from} onChange={setFrom} />
-          <AirportField id="flight-to" label="To" value={to} onChange={setTo} />
+          <div className="min-w-0">
+            <AirportField id="flight-from" label="From" value={from} onChange={setFrom} />
+          </div>
+          <div className="min-w-0">
+            <AirportField id="flight-to" label="To" value={to} onChange={setTo} />
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      {/* Stacked until about 560px. A datetime input has a minimum intrinsic
+          width of roughly 200px — its own placeholder plus the calendar button
+          — so in two columns on a phone the pair overflow their tracks and sit
+          on top of each other. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <TimeField
           id="flight-depart"
           label="Departs"
