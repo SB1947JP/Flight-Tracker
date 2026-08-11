@@ -8,13 +8,15 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "lint": "tsc --noEmit",
-    "coastline": "node tools/gen-coastline.mjs > src/coastline.ts"
+    "coastline": "node tools/gen-coastline.mjs > src/coastline.ts",
+    "airports": "node tools/gen-airports.mjs > src/airports-data.ts"
   },
   "dependencies": {
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@nwpr/airport-codes": "^3.0.3",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.2",

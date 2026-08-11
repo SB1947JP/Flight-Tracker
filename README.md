@@ -54,9 +54,13 @@ node tools/build-singlefile.mjs    # after a build: inline everything into dist/
 
 `single.html` is the whole app as one self-contained file, which is what makes it publishable anywhere that serves a single page.
 
-## Adding an airport
+## Airports
 
-`src/airports.ts` holds about 135 of the busiest passenger airports. Every position in it has been checked against the OurAirports dataset and agrees to within 3 km. Adding one is a row: IATA code, position in degrees, and its IANA timezone name. An unrecognised code is reported in the form rather than silently accepted.
+There is nothing to add. `src/airports-data.ts` carries every airport in the world with an IATA code — about 5,500 — generated from [OurAirports](https://ourairports.com) (public domain) by `npm run airports`.
+
+It replaced a table of 136 typed out by hand, which covered roughly one airport in forty: Birmingham, Treviso and most of the world could not be entered at all. The data costs about 145 KB gzipped, which is most of what the app downloads, and that is a deliberate trade — an airport picker that fails on the majority of real journeys makes the whole app worth less than the download saves.
+
+Rows are parsed on first use, so following a flight by number alone never touches them, and the table is built as its own chunk so a code deploy leaves it cached.
 
 ## Layout
 
@@ -68,7 +72,8 @@ node tools/build-singlefile.mjs    # after a build: inline everything into dist/
 | `src/live.ts` | Fetching and parsing live aircraft positions |
 | `src/useLive.ts` | Polling: only airborne, only when visible, every 20s |
 | `src/airlines.ts` | Ticket-number → radio-callsign translation |
-| `src/airports.ts` | The bundled airport table |
+| `src/airports.ts` | Airport lookup and ranked search |
+| `src/airports-data.ts` | Generated airport table — do not hand-edit |
 | `src/coastline.ts` | Generated basemap geometry — do not hand-edit |
 | `src/RouteMap.tsx` | Web Mercator projection, the basemap, the route, the aircraft, full screen |
 | `src/FlightDetail.tsx` | The tracking view for one flight |
