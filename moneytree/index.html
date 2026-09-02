@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#F6F5F2" />
+    <!--
+      Nothing leaves this page. `connect-src 'self'` is the whole promise: your
+      accounts, balances and every transaction you import live in this browser's
+      localStorage and are never uploaded. There is no analytics endpoint, no
+      font host and no bank connection in this policy to send them to.
+
+      That is also the honest difference between this and Moneytree proper.
+      Moneytree reads your banks for you, which requires a licensed connection
+      to each institution. This reads the CSV the bank already gives you, which
+      requires nothing and nobody.
+
+      `style-src 'unsafe-inline'` is here because React `style={{…}}` props are
+      inline style attributes. Styles only; it grants no script execution.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self';
+               script-src 'self';
+               style-src 'self' 'unsafe-inline';
+               img-src 'self' data:;
+               connect-src 'self';
+               object-src 'none';
+               base-uri 'self';
+               form-action 'none'"
+    />
+    <title>Moneytree</title>
+  </head>
+  <body class="bg-[#F6F5F2] text-[#1A1B1D]">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
