@@ -463,8 +463,23 @@ export function RouteMap({
           aria-hidden="true"
           draggable={false}
           loading="lazy"
-          // Don't hand this app's URL to the tile host with every request.
-          referrerPolicy="no-referrer"
+          // Send this app's origin — and only its origin — with each tile
+          // request.
+          //
+          // This used to be `no-referrer`, on the reasoning that a tile server
+          // has no business knowing which page is drawing the map. OpenStreetMap
+          // takes the opposite view, and theirs is the one that counts: their
+          // tiles come from donated, volunteer-run servers, identifying who is
+          // using them is how they police abuse, and since 2026 their usage
+          // policy explicitly forbids sending no-referrer and serves an "Access
+          // blocked" tile to anyone who does. That is exactly what this app
+          // started getting, in place of every tile on the map.
+          //
+          // `strict-origin-when-cross-origin` sends `https://<host>/` and never
+          // the path, so they learn which app is asking without learning which
+          // flight is being looked at. That is the privacy that was actually
+          // worth keeping.
+          referrerPolicy="strict-origin-when-cross-origin"
           width={TILE_SIZE}
           height={TILE_SIZE}
           // Darkened and desaturated rather than made transparent: the route and

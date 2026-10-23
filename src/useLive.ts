@@ -33,6 +33,18 @@ const POLL_MS = 20_000;
 const SEARCHING_POLL_MS = 60_000;
 /** Past this age a fix is stale enough that the label should stop saying "live". */
 export const FIX_FRESH_MS = 120_000;
+/**
+ * Backing off when nothing answers at all.
+ *
+ * Distinct from "nothing found", which is the normal condition over an ocean
+ * and keeps the usual rate. This is for the service being unreachable: a tab
+ * left open then asks every twenty seconds for as long as it lives, which is
+ * thousands of requests a day aimed at a free service precisely when it is
+ * least able to take them, and the surest way to turn a temporary block into a
+ * lasting one. Each consecutive failure doubles the wait, to a five-minute
+ * ceiling; one success puts it straight back to normal.
+ */
+const MAX_BACKOFF_MS = 300_000;
 
 export interface LiveState {
   /** The radio callsign being searched for, or null if it couldn't be worked out. */
@@ -80,6 +92,7 @@ export function useLive(flight: Flight | undefined, isAirborne: boolean): LiveSt
     if (!callsign || !isAirborne) return;
 
     let cancelled = false;
+    let failures = 0;
 
     const poll = async () => {
       // Don't stack requests if one is still outstanding on a slow connection.
@@ -109,6 +122,10 @@ export function useLive(flight: Flight | undefined, isAirborne: boolean): LiveSt
         // worth showing anyone.
         if (outcome.state === 'error' && outcome.message === 'cancelled') return;
 
+        // "Nothing found" is a perfectly good answer from a service that is
+        // working, so only an actual failure to reach one counts here.
+        failures = outcome.state === 'error' ? failures + 1 : 0;
+
         setResult(outcome);
         if (outcome.state === 'found') setLastFix(outcome.position);
       } catch (error) {
@@ -119,6 +136,7 @@ export function useLive(flight: Flight | undefined, isAirborne: boolean): LiveSt
         // reload. Whatever it is, say so and carry on polling.
         if (cancelled) return;
         if (error instanceof DOMException && error.name === 'AbortError') return;
+        failures += 1;
         setResult({ state: 'error', message: 'Something went wrong looking this flight up.' });
         console.error('Live lookup failed unexpectedly:', error);
       } finally {
@@ -136,7 +154,9 @@ export function useLive(flight: Flight | undefined, isAirborne: boolean): LiveSt
     let timer = 0;
     const scheduleNext = () => {
       if (cancelled) return;
-      timer = window.setTimeout(cycle, workingRef.current ? POLL_MS : SEARCHING_POLL_MS);
+      const base = workingRef.current ? POLL_MS : SEARCHING_POLL_MS;
+      const wait = failures === 0 ? base : Math.min(MAX_BACKOFF_MS, base * 2 ** failures);
+      timer = window.setTimeout(cycle, wait);
     };
     const cycle = async () => {
       // A hidden tab keeps its place in the queue without spending a request.

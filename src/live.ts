@@ -92,6 +92,17 @@ const ENDPOINTS: Endpoint[] = [
 /** Which spelling of the area request worked, per service. */
 const workingAreaForm = new Map<string, number>();
 
+/**
+ * Spellings a service has refused outright, as `name:index`.
+ *
+ * Asking a free service for a URL it has already said doesn't exist, every
+ * twenty seconds, for as long as the page is open, is precisely the behaviour
+ * these networks ask people not to engage in — adsb.fi's terms say 4xx replies
+ * count towards a temporary block of your address. A refusal is remembered and
+ * the question is not asked again.
+ */
+const deadForms = new Set<string>();
+
 /** The last service that answered, tried first next time. */
 let preferred = 0;
 
@@ -165,6 +176,9 @@ async function askOneService(
   /** Called with the index of the spelling that worked, so the caller can
    *  remember it and stop paying for the ones that don't. */
   onSpellingWorked?: (endpoint: Endpoint, formIndex: number) => void,
+  /** Called when a service refuses a spelling outright (a 4xx), so the caller
+   *  can stop asking. Not called for a network failure, which may be passing. */
+  onSpellingRefused?: (endpoint: Endpoint, formIndex: number) => void,
 ) {
   const failures: string[] = [];
 
@@ -191,6 +205,9 @@ async function askOneService(
       if (!response) continue;
       if (!response.ok) {
         failures.push(`${where} replied ${response.status}`);
+        // 4xx is the service saying this request is wrong and will stay wrong;
+        // 5xx is it having a bad day, which is worth trying again later.
+        if (response.status >= 400 && response.status < 500) onSpellingRefused?.(endpoint, form);
         continue;
       }
 
@@ -367,6 +384,9 @@ export async function fetchAircraftNear(
   // rejected outright rather than clamped for you.
   const nm = Math.max(1, Math.min(250, Math.round(radiusNm)));
   const at = (n: number) => n.toFixed(3);
+  /** Which spellings were offered to each service on this call, so a result
+   *  reported by position can be mapped back to the spelling it refers to. */
+  const offeredForms = new Map<string, number[]>();
 
   let payload: unknown;
   let answered = '';
@@ -374,19 +394,29 @@ export async function fetchAircraftNear(
   try {
     ({ payload, answered, failures } = await askOneService(
       (endpoint) => {
-        const forms = endpoint.area;
         const known = workingAreaForm.get(endpoint.name);
-        // Once a spelling has answered, ask only in that one.
-        const chosen = known === undefined ? forms : [forms[known]];
-        return chosen.map((form) => form(Number(at(lat)), Number(at(lon)), nm));
+        // Once a spelling has answered, ask only in that one; otherwise ask in
+        // every spelling the service hasn't already refused.
+        const offered =
+          known === undefined
+            ? endpoint.area.map((_, i) => i).filter((i) => !deadForms.has(`${endpoint.name}:${i}`))
+            : [known];
+        offeredForms.set(endpoint.name, offered);
+        return offered.map((i) => endpoint.area[i](Number(at(lat)), Number(at(lon)), nm));
       },
       signal,
-      (endpoint, formIndex) => {
-        if (!workingAreaForm.has(endpoint.name)) {
-          // `formIndex` counts within the list that was *offered*, which is the
-          // full list precisely while nothing is remembered yet.
-          workingAreaForm.set(endpoint.name, formIndex);
+      (endpoint, offeredIndex) => {
+        // `offeredIndex` counts within the list that was offered, which may be
+        // shorter than `endpoint.area` once a spelling has been refused — so it
+        // has to be mapped back before it means anything.
+        const actual = offeredForms.get(endpoint.name)?.[offeredIndex];
+        if (actual !== undefined && !workingAreaForm.has(endpoint.name)) {
+          workingAreaForm.set(endpoint.name, actual);
         }
+      },
+      (endpoint, offeredIndex) => {
+        const actual = offeredForms.get(endpoint.name)?.[offeredIndex];
+        if (actual !== undefined) deadForms.add(`${endpoint.name}:${actual}`);
       },
     ));
   } catch (error) {

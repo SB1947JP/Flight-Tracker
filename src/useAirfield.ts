@@ -13,6 +13,22 @@ import { Airfield, AirfieldTraffic, classify, trafficOrder } from './airfield';
  */
 
 const POLL_MS = 20_000;
+/**
+ * Backing off when nothing is answering.
+ *
+ * A page left open against a service that is down, or blocking this address,
+ * otherwise asks again every twenty seconds for as long as the tab lives —
+ * thousands of requests a day at the exact moment the service is least able to
+ * take them, and the surest way to turn a temporary block into a lasting one.
+ * Each consecutive failure doubles the wait, up to five minutes; the first
+ * success puts it straight back to normal.
+ */
+const MAX_BACKOFF_MS = 300_000;
+
+function backoffFor(consecutiveFailures: number): number {
+  if (consecutiveFailures === 0) return POLL_MS;
+  return Math.min(MAX_BACKOFF_MS, POLL_MS * 2 ** consecutiveFailures);
+}
 
 export interface TrafficRow extends AreaAircraft, AirfieldTraffic {}
 
@@ -44,6 +60,7 @@ export function useAirfield(
     if (!active) return;
     let cancelled = false;
     let timer = 0;
+    let failures = 0;
 
     const poll = async () => {
       abortRef.current?.abort();
@@ -54,6 +71,8 @@ export function useAirfield(
         const outcome = await fetchAircraftNear(field.lat, field.lon, radiusNm, controller.signal);
         if (cancelled) return;
         if (outcome.state === 'error' && outcome.message === 'cancelled') return;
+
+        failures = outcome.state === 'error' ? failures + 1 : 0;
 
         setResult(outcome);
         if (outcome.state === 'found') {
@@ -73,6 +92,7 @@ export function useAirfield(
       } catch (error) {
         if (cancelled) return;
         if (error instanceof DOMException && error.name === 'AbortError') return;
+        failures += 1;
         setResult({ state: 'error', message: 'Something went wrong reading the traffic here.' });
         console.error('Airfield lookup failed unexpectedly:', error);
       } finally {
@@ -82,7 +102,7 @@ export function useAirfield(
 
     const scheduleNext = () => {
       if (cancelled) return;
-      timer = window.setTimeout(cycle, POLL_MS);
+      timer = window.setTimeout(cycle, backoffFor(failures));
     };
     const cycle = async () => {
       if (!document.hidden) await poll();
