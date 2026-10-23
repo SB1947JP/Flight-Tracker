@@ -8,13 +8,29 @@
     <!--
       Exactly one outside connection, and it is named below.
 
-      `connect-src` allows three community flight-tracking networks and nothing
-      else. They are where the live aircraft positions come from: the app sends
-      one a radio callsign and gets back a position, and tries the next if that
-      one doesn't answer. Nothing else leaves this page —
-      your flights are stored in this browser and are never uploaded, and there
-      is no analytics, font host or map tile server in the policy to send them
-      to.
+      `connect-src` allows three community flight-tracking networks and this
+      app's own relay, and nothing else. They are where the live aircraft
+      positions come from: the app sends a radio callsign, or a point and a
+      radius, and gets back positions.
+
+      The relay is there because those networks stopped letting a web page read
+      their replies — they still answer, but without the header a browser needs
+      before it will hand the data to the page, so the app couldn't see it. The
+      relay (see relay/worker.js) asks on the page's behalf from a server, where
+      that rule doesn't apply. It is this app's own, it will only fetch the
+      handful of URL shapes this app uses, and it carries no more than the
+      requests already did: a callsign, or a point on the map.
+
+      The relay is allowed here as `*.workers.dev` rather than by its exact
+      address, because Cloudflare hands out the subdomain and it isn't known
+      until the relay is created. That is looser than the rest of this policy
+      deserves — it permits any address on that shared domain — so **pin it to
+      the one address once it exists**. It is a wildcard of convenience, not of
+      design.
+
+      Nothing else leaves this page — your flights are stored in this browser
+      and are never uploaded, and there is no analytics or font host in the
+      policy to send them to.
 
       `img-src` additionally allows OpenStreetMap's tile server, which draws the
       map itself. Beneath those tiles the app still carries its own coastline
@@ -31,7 +47,7 @@
                script-src 'self';
                style-src 'self' 'unsafe-inline';
                img-src 'self' data: https://tile.openstreetmap.org;
-               connect-src 'self' https://api.adsb.lol https://opendata.adsb.fi https://api.airplanes.live;
+               connect-src 'self' https://api.adsb.lol https://opendata.adsb.fi https://api.airplanes.live https://*.workers.dev;
                object-src 'none';
                base-uri 'self';
                form-action 'none'"

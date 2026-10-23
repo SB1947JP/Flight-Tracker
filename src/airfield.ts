@@ -117,11 +117,7 @@ export function classify(
 ): AirfieldTraffic {
   const here = { lat: aircraft.lat, lon: aircraft.lon };
   const distance = distanceKm(here, field);
-
-  // Attribute to whichever field it is closest to. Distance alone is the right
-  // test near the ground and a meaningless one in the cruise, which is why this
-  // only decides between fields — whether it is landing at all comes after.
-  const nearer = rivals.find((rival) => distanceKm(here, rival) < distance);
+  const nearer = belongsElsewhere(aircraft, here, distance, field, rivals);
 
   if (aircraft.onGround) {
     return nearer
@@ -139,10 +135,11 @@ export function classify(
     return { movement: 'passing', distanceKm: distance, heightFt, otherField: nearer };
   }
 
-  // In the cruise: overhead traffic, whoever it belongs to. A descent that
-  // begins this high is still a hundred miles from touching down anywhere.
+  // In the cruise: overhead traffic, belonging to no airfield down here. A
+  // descent that begins this high is still a hundred miles from touching down
+  // anywhere, so no field is named.
   if (heightFt > CRUISE_FT) {
-    return { movement: 'passing', distanceKm: distance, heightFt, otherField: nearer };
+    return { movement: 'passing', distanceKm: distance, heightFt };
   }
 
   if (nearer) {
@@ -167,6 +164,57 @@ export function classify(
   // Low, level, and going sideways past the field: in the circuit, or being
   // vectored around. At the field without being on a leg to or from it.
   return { movement: 'passing', distanceKm: distance, heightFt };
+}
+
+/**
+ * Which other airfield this aircraft is really working, if it isn't this one.
+ *
+ * Nearest-field was the first rule and it is wrong in the place it matters
+ * most: the gap between Komaki and Centrair. An aircraft halfway between them
+ * can be marginally nearer Komaki while descending on a heading that points
+ * straight at Centrair, and calling that a Komaki movement is exactly the kind
+ * of confident error that makes the whole list untrustworthy.
+ *
+ * So where the aircraft is pointed decides it, and distance only breaks ties.
+ * A descent belongs to the field ahead of it; a climb belongs to the field
+ * behind it. With no track to go on there is nothing better than nearest.
+ */
+function belongsElsewhere(
+  aircraft: { altitudeFt?: number; verticalRateFpm?: number; headingDeg?: number },
+  here: LatLon,
+  distance: number,
+  field: Airfield,
+  rivals: Airfield[],
+): Airfield | undefined {
+  if (rivals.length === 0) return undefined;
+
+  // Nothing in the cruise belongs to any airfield down here. Attributing an
+  // airliner at 29,000 ft to whichever runway it happens to be over reads as
+  // "landing at Centrair" when it is on its way to somewhere else entirely.
+  const heightFt = aircraft.altitudeFt === undefined ? undefined : aircraft.altitudeFt - field.elevationFt;
+  if (heightFt !== undefined && heightFt > CRUISE_FT) return undefined;
+
+  const nearest = () => rivals.find((rival) => distanceKm(here, rival) < distance);
+
+  const track = aircraft.headingDeg;
+  if (track === undefined) return nearest();
+
+  // Climbing: the field it came from is behind it. Otherwise: the field it is
+  // going to is ahead of it. A level aircraft is treated as arriving, since
+  // that is what the low, level stretch of an approach looks like.
+  const climbing = (aircraft.verticalRateFpm ?? 0) >= CLIMB_FPM;
+  const pointsAt = (to: Airfield) => {
+    const off = angleBetween(track, bearingDeg(here, to));
+    return climbing ? off >= 120 : off <= 60;
+  };
+
+  const candidates = [field, ...rivals].filter(pointsAt);
+  if (candidates.length === 0) return nearest();
+
+  // Among the fields it could be heading for, the nearest is the one it is
+  // dealing with now.
+  const best = candidates.reduce((a, b) => (distanceKm(here, b) < distanceKm(here, a) ? b : a));
+  return best === field ? undefined : best;
 }
 
 /** Smallest angle between two compass bearings, 0–180°. */

@@ -40,6 +40,27 @@
  * The one that answered last is remembered and tried first, so the steady state
  * is a single request per poll.
  */
+/**
+ * The relay that fetches on this page's behalf — see `relay/worker.js`.
+ *
+ * Empty means "ask the services directly", which is how this app worked until
+ * they stopped letting web pages read their replies. The direct path is kept
+ * rather than deleted: it costs nothing, it is what runs if the relay is ever
+ * removed, and if any of the three starts permitting browsers again it simply
+ * works.
+ *
+ * Set this to the relay's address — no trailing slash.
+ */
+const RELAY_BASE = '';
+
+/** The URL to actually request: via the relay when there is one, direct when
+ *  there isn't. The relay mirrors each service's own paths under a segment
+ *  naming the service, so the two forms differ only in their beginning. */
+function through(service: string, direct: string): string {
+  if (!RELAY_BASE) return direct;
+  return `${RELAY_BASE}/${service}${new URL(direct).pathname}`;
+}
+
 interface Endpoint {
   name: string;
   /** Every aircraft currently broadcasting this callsign. One spelling: this is
@@ -68,24 +89,24 @@ interface Endpoint {
 const ENDPOINTS: Endpoint[] = [
   {
     name: 'adsb.lol',
-    callsign: (cs) => `https://api.adsb.lol/v2/callsign/${cs}`,
+    callsign: (cs) => through('adsb.lol', `https://api.adsb.lol/v2/callsign/${cs}`),
     area: [
-      (lat, lon, nm) => `https://api.adsb.lol/v2/lat/${lat}/lon/${lon}/dist/${nm}`,
-      (lat, lon, nm) => `https://api.adsb.lol/v2/point/${lat}/${lon}/${nm}`,
+      (lat, lon, nm) => through('adsb.lol', `https://api.adsb.lol/v2/lat/${lat}/lon/${lon}/dist/${nm}`),
+      (lat, lon, nm) => through('adsb.lol', `https://api.adsb.lol/v2/point/${lat}/${lon}/${nm}`),
     ],
   },
   {
     name: 'adsb.fi',
-    callsign: (cs) => `https://opendata.adsb.fi/api/v2/callsign/${cs}`,
+    callsign: (cs) => through('adsb.fi', `https://opendata.adsb.fi/api/v2/callsign/${cs}`),
     area: [
-      (lat, lon, nm) => `https://opendata.adsb.fi/api/v3/lat/${lat}/lon/${lon}/dist/${nm}`,
-      (lat, lon, nm) => `https://opendata.adsb.fi/api/v2/lat/${lat}/lon/${lon}/dist/${nm}`,
+      (lat, lon, nm) => through('adsb.fi', `https://opendata.adsb.fi/api/v3/lat/${lat}/lon/${lon}/dist/${nm}`),
+      (lat, lon, nm) => through('adsb.fi', `https://opendata.adsb.fi/api/v2/lat/${lat}/lon/${lon}/dist/${nm}`),
     ],
   },
   {
     name: 'airplanes.live',
-    callsign: (cs) => `https://api.airplanes.live/v2/callsign/${cs}`,
-    area: [(lat, lon, nm) => `https://api.airplanes.live/v2/point/${lat}/${lon}/${nm}`],
+    callsign: (cs) => through('airplanes.live', `https://api.airplanes.live/v2/callsign/${cs}`),
+    area: [(lat, lon, nm) => through('airplanes.live', `https://api.airplanes.live/v2/point/${lat}/${lon}/${nm}`)],
   },
 ];
 
@@ -147,6 +168,24 @@ export type LiveResult =
   | { state: 'not-found' }
   /** Could not reach the service, or could not make sense of what came back. */
   | { state: 'error'; message: string };
+
+/**
+ * The callsign an aircraft is broadcasting, or null when it isn't saying.
+ *
+ * The field is fixed-width and padded with spaces, so it always needs trimming.
+ * It is also whatever the crew typed into the box, which on a real reply from
+ * Komaki included an aircraft transmitting `@@@@@@@@` — an unset transponder,
+ * not a flight. Printing that verbatim in a list of flights makes the app look
+ * broken; it is an aircraft with no callsign, and "no callsign" is a thing the
+ * list already knows how to show.
+ */
+function readCallsign(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  // Anything without a letter or digit in it is padding or a placeholder.
+  return /[A-Z0-9]/i.test(trimmed) ? trimmed : null;
+}
 
 /** Read a number from any of several possible field names. */
 function num(source: Record<string, unknown>, ...keys: string[]): number | undefined {
@@ -468,10 +507,9 @@ export async function fetchAircraftNear(
     const onGround = rawAlt === 'ground' || entry.ground === true;
 
     const secondsOld = num(entry, 'seen_pos', 'seen') ?? 0;
-    const callsign = typeof entry.flight === 'string' ? entry.flight.trim() : null;
 
     aircraft.push({
-      callsign: callsign || null,
+      callsign: readCallsign(entry.flight),
       lat: aLat,
       lon: aLon,
       altitudeFt: onGround ? undefined : num(entry, 'alt_baro', 'alt_geom', 'altitude', 'alt'),

@@ -24,6 +24,53 @@ The labels are inferred from altitude, vertical rate and distance, with one piec
 
 `src/airfield.ts` holds the thresholds and the reasoning; the view itself is `src/AirfieldView.tsx`. Pointing it at a different airfield is a matter of changing the two constants at the top of `airfield.ts`.
 
+## The relay
+
+In October 2026 the live half of this app stopped working, and the reason is
+worth recording because it isn't a bug and can't be fixed in the app.
+
+The ADS-B networks still answer requests — open
+`https://api.adsb.lol/v2/lat/35.255/lon/136.924/dist/40` in a browser tab and
+you get aircraft. What they no longer send is the header that permits a *web
+page* to read the reply. A browser enforces that: the data arrives and is
+thrown away before the page sees it. Typing the URL into a tab isn't subject to
+the rule, which is why the tab works and the app doesn't, and why this looked
+for an hour like a network fault at the reader's end.
+
+A page cannot opt out of that rule. The request has to come from a server, and
+this app deliberately has none, so `relay/worker.js` is the smallest one that
+will do: it fetches on the page's behalf and passes the answer back with
+permission attached. It is a Cloudflare Worker — free, about thirty lines, no
+build step.
+
+It is **not** a general-purpose proxy, and the three refusals in it are the
+point. It fetches only the handful of URL shapes this app uses, only from the
+three named services, and only for requests from this app's own pages. An open
+relay is found and abused within days, and the abuse is attributed to whoever
+owns it. It also sets a `User-Agent` naming the app with a link, which a page
+cannot do and which is what these services ask for — part of why they have
+grown wary of browser apps in the first place.
+
+### Setting one up
+
+1. Make a free account at [cloudflare.com](https://dash.cloudflare.com/sign-up).
+2. In the dashboard: **Compute (Workers)** → **Create** → **Start from Hello
+   World** → name it `flight-tracker-relay` → **Deploy**.
+3. **Edit code**, select everything in the editor, paste in the whole of
+   `relay/worker.js` from this repository, and **Deploy** again.
+4. The page shows the address it is live at, ending `.workers.dev`. Put it in
+   `RELAY_BASE` at the top of `src/live.ts`, with no trailing slash.
+5. Pin that same address in the `connect-src` list in `index.html`, replacing
+   the `https://*.workers.dev` wildcard that is there for want of knowing it.
+
+The free tier is 100,000 requests a day. This app polls every 20 seconds while
+you are watching something, so a day of continuous use is about 4,000.
+
+If `RELAY_BASE` is left empty the app asks the services directly, exactly as it
+used to. That path is kept rather than deleted: it costs nothing, it is what
+runs if the relay is ever taken away, and if any of the three starts permitting
+browsers again it simply starts working.
+
 ## Look
 
 Light, warm and quiet, with exactly one saturated colour in it — the aircraft. Everything else is ink, grey and hairline, and state is signalled by weight and position rather than by giving each condition its own hue.
