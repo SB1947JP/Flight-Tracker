@@ -89,45 +89,75 @@ export function useLive(flight: Flight | undefined, isAirborne: boolean): LiveSt
 
       setLoading(true);
 
-      // Once a spelling has worked, ask only for that one.
-      const toTry = workingRef.current ? [workingRef.current] : variants;
-      let matched = toTry[0];
-      let outcome = await fetchLivePosition(toTry[0], controller.signal);
-      for (let i = 1; i < toTry.length && outcome.state === 'not-found'; i++) {
-        matched = toTry[i];
-        outcome = await fetchLivePosition(toTry[i], controller.signal);
+      try {
+        // Once a spelling has worked, ask only for that one.
+        const toTry = workingRef.current ? [workingRef.current] : variants;
+        let matched = toTry[0];
+        let outcome = await fetchLivePosition(toTry[0], controller.signal);
+        for (let i = 1; i < toTry.length && outcome.state === 'not-found'; i++) {
+          matched = toTry[i];
+          outcome = await fetchLivePosition(toTry[i], controller.signal);
+        }
+        if (outcome.state === 'found') {
+          workingRef.current = matched;
+          setMatchedCallsign(matched);
+        }
+
+        if (cancelled) return;
+
+        // An abort is this component replacing its own request, not a failure
+        // worth showing anyone.
+        if (outcome.state === 'error' && outcome.message === 'cancelled') return;
+
+        setResult(outcome);
+        if (outcome.state === 'found') setLastFix(outcome.position);
+      } catch (error) {
+        // Nothing below is expected to throw — fetchLivePosition turns every
+        // anticipated failure into a LiveResult. But an unexpected one escaping
+        // here used to leave `loading` stuck true forever, so the label read
+        // "Checking…" for the rest of the session with no way back but a
+        // reload. Whatever it is, say so and carry on polling.
+        if (cancelled) return;
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        setResult({ state: 'error', message: 'Something went wrong looking this flight up.' });
+        console.error('Live lookup failed unexpectedly:', error);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      if (outcome.state === 'found') {
-        workingRef.current = matched;
-        setMatchedCallsign(matched);
-      }
-
-      if (cancelled) return;
-      setLoading(false);
-
-      // An abort is this component replacing its own request, not a failure
-      // worth showing anyone.
-      if (outcome.state === 'error' && outcome.message === 'cancelled') return;
-
-      setResult(outcome);
-      if (outcome.state === 'found') setLastFix(outcome.position);
     };
 
-    poll();
-    const id = window.setInterval(() => {
-      if (!document.hidden) poll();
-    }, workingRef.current ? POLL_MS : SEARCHING_POLL_MS);
+    // A self-rescheduling timer rather than setInterval, because the interval
+    // itself has to change. Until an aircraft is found each poll tries several
+    // callsign spellings, so it runs at the slower rate; once one matches, a
+    // poll costs a single request and the fast rate applies. setInterval fixed
+    // the rate at the moment tracking started — which is always *before* the
+    // first match — so the fast rate was unreachable and every flight updated
+    // three times slower than intended.
+    let timer = 0;
+    const scheduleNext = () => {
+      if (cancelled) return;
+      timer = window.setTimeout(cycle, workingRef.current ? POLL_MS : SEARCHING_POLL_MS);
+    };
+    const cycle = async () => {
+      // A hidden tab keeps its place in the queue without spending a request.
+      if (!document.hidden) await poll();
+      scheduleNext();
+    };
+
+    void poll().then(scheduleNext);
 
     // A tab that comes back to the front should show current information
     // immediately rather than up to twenty seconds of staleness.
     const onVisible = () => {
-      if (!document.hidden) poll();
+      if (document.hidden) return;
+      window.clearTimeout(timer);
+      void poll().then(scheduleNext);
     };
     document.addEventListener('visibilitychange', onVisible);
 
     return () => {
       cancelled = true;
-      window.clearInterval(id);
+      window.clearTimeout(timer);
       document.removeEventListener('visibilitychange', onVisible);
       abortRef.current?.abort();
     };

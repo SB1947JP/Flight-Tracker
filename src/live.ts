@@ -49,6 +49,10 @@ const ENDPOINTS = [
 /** The last service that answered, tried first next time. */
 let preferred = 0;
 
+/** Sentinel for "the body wouldn't parse as JSON" — distinct from any value a
+ *  service could legitimately send, including null. */
+const FAILED_TO_PARSE = Symbol('failed-to-parse');
+
 /**
  * Whether the browser's own security policy blocked one of these requests.
  *
@@ -113,9 +117,9 @@ async function askOneService(callsign: string, signal?: AbortSignal) {
   const failures: string[] = [];
 
   // Start with whichever service worked last, then the rest.
-  const order = ENDPOINTS.map((_, i) => ENDPOINTS[(preferred + i) % ENDPOINTS.length]);
-
-  for (const endpoint of order) {
+  for (let i = 0; i < ENDPOINTS.length; i++) {
+    const index = (preferred + i) % ENDPOINTS.length;
+    const endpoint = ENDPOINTS[index];
     const response = await fetch(endpoint.url(encoded), { signal, headers: { Accept: 'application/json' } }).catch(
       (error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') throw error;
@@ -128,7 +132,21 @@ async function askOneService(callsign: string, signal?: AbortSignal) {
       failures.push(`${endpoint.name} replied ${response.status}`);
       continue;
     }
-    return { payload: (await response.json()) as unknown, answered: endpoint.name, failures };
+
+    // A service can answer 200 with something that isn't JSON at all — an error
+    // page, or a captive-wifi login screen standing in for the real reply. Treat
+    // that as this service failing rather than letting it throw: the next one
+    // along may well be fine, and it is the whole reason there are three.
+    const payload = await response.json().catch(() => FAILED_TO_PARSE);
+    if (payload === FAILED_TO_PARSE) {
+      failures.push(`${endpoint.name} sent something that wasn't JSON`);
+      continue;
+    }
+
+    // Remember what worked, so the steady state really is one request per poll
+    // rather than a failing service re-tried first every single time.
+    preferred = index;
+    return { payload: payload as unknown, answered: endpoint.name, failures };
   }
   return { payload: undefined, answered: '', failures };
 }
