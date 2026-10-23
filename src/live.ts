@@ -40,10 +40,32 @@
  * The one that answered last is remembered and tried first, so the steady state
  * is a single request per poll.
  */
-const ENDPOINTS = [
-  { name: 'adsb.lol', url: (cs: string) => `https://api.adsb.lol/v2/callsign/${cs}` },
-  { name: 'adsb.fi', url: (cs: string) => `https://opendata.adsb.fi/api/v2/callsign/${cs}` },
-  { name: 'airplanes.live', url: (cs: string) => `https://api.airplanes.live/v2/callsign/${cs}` },
+interface Endpoint {
+  name: string;
+  /** Every aircraft currently broadcasting this callsign. */
+  callsign: (cs: string) => string;
+  /** Every aircraft within `nm` nautical miles of a point. Two of the three
+   *  spell this as a path of its own; adsb.fi puts the parts in named segments.
+   *  All three cap the radius at 250 nm. */
+  area: (lat: number, lon: number, nm: number) => string;
+}
+
+const ENDPOINTS: Endpoint[] = [
+  {
+    name: 'adsb.lol',
+    callsign: (cs) => `https://api.adsb.lol/v2/callsign/${cs}`,
+    area: (lat, lon, nm) => `https://api.adsb.lol/v2/point/${lat}/${lon}/${nm}`,
+  },
+  {
+    name: 'adsb.fi',
+    callsign: (cs) => `https://opendata.adsb.fi/api/v2/callsign/${cs}`,
+    area: (lat, lon, nm) => `https://opendata.adsb.fi/api/v2/lat/${lat}/lon/${lon}/dist/${nm}`,
+  },
+  {
+    name: 'airplanes.live',
+    callsign: (cs) => `https://api.airplanes.live/v2/callsign/${cs}`,
+    area: (lat, lon, nm) => `https://api.airplanes.live/v2/point/${lat}/${lon}/${nm}`,
+  },
 ];
 
 /** The last service that answered, tried first next time. */
@@ -112,15 +134,14 @@ function num(source: Record<string, unknown>, ...keys: string[]): number | undef
  * `signal` lets a pending request be abandoned when the user selects a
  * different flight, so a slow reply can't overwrite a newer one.
  */
-async function askOneService(callsign: string, signal?: AbortSignal) {
-  const encoded = encodeURIComponent(callsign);
+async function askOneService(urlFor: (endpoint: Endpoint) => string, signal?: AbortSignal) {
   const failures: string[] = [];
 
   // Start with whichever service worked last, then the rest.
   for (let i = 0; i < ENDPOINTS.length; i++) {
     const index = (preferred + i) % ENDPOINTS.length;
     const endpoint = ENDPOINTS[index];
-    const response = await fetch(endpoint.url(encoded), { signal, headers: { Accept: 'application/json' } }).catch(
+    const response = await fetch(urlFor(endpoint), { signal, headers: { Accept: 'application/json' } }).catch(
       (error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') throw error;
         failures.push(`${endpoint.name} unreachable`);
@@ -151,42 +172,28 @@ async function askOneService(callsign: string, signal?: AbortSignal) {
   return { payload: undefined, answered: '', failures };
 }
 
-export async function fetchLivePosition(callsign: string, signal?: AbortSignal): Promise<LiveResult> {
-  let payload: unknown;
-  let answered = '';
-  let failures: string[] = [];
-
-  try {
-    ({ payload, answered, failures } = await askOneService(callsign, signal));
-  } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') {
-      return { state: 'error', message: 'cancelled' };
-    }
-    throw error;
+/**
+ * Why no service answered, in words worth showing someone — or null if one did.
+ *
+ * "Check your connection" is useless advice on a device whose connection is
+ * demonstrably fine, which is the usual case when a blocker is the culprit, so
+ * the causes actually worth checking are named instead.
+ */
+function whyUnreachable(answered: string, failures: string[]): string | null {
+  if (answered) return null;
+  if (cspBlocked) {
+    return "This page's own security policy blocked the request — that's a bug in the app, not your device.";
   }
+  return `Couldn't reach any flight service (${failures.join(', ')}). If other sites work, a tracker/ad blocker or a private-relay setting is the usual cause — try another browser to check.`;
+}
 
-  if (!answered) {
-    // Every service failed. Say which, and name the causes worth checking —
-    // "check your connection" is useless advice on a device whose connection is
-    // demonstrably fine, which is the usual case when a blocker is the culprit.
-    if (cspBlocked) {
-      return {
-        state: 'error',
-        message: "This page's own security policy blocked the request — that's a bug in the app, not your device.",
-      };
-    }
-    return {
-      state: 'error',
-      message: `Couldn't reach any flight service (${failures.join(', ')}). If other sites work, a tracker/ad blocker or a private-relay setting is the usual cause — try another browser to check.`,
-    };
-  }
-
-  if (typeof payload !== 'object' || payload === null) {
-    return { state: 'error', message: `${answered} sent something unreadable.` };
-  }
-
-  // Aircraft have lived under `ac` and under `aircraft` in different versions
-  // of this API, and a bare array is a plausible third shape.
+/**
+ * The aircraft array out of whatever shape the service wrapped it in, or null
+ * if there isn't one. Aircraft have lived under `ac` and under `aircraft` in
+ * different versions of this API, and a bare array is a plausible third shape.
+ */
+function aircraftList(payload: unknown, answered: string): Record<string, unknown>[] | null {
+  if (typeof payload !== 'object' || payload === null) return null;
   const container = payload as Record<string, unknown>;
   const list = Array.isArray(payload)
     ? payload
@@ -195,11 +202,37 @@ export async function fetchLivePosition(callsign: string, signal?: AbortSignal):
       : Array.isArray(container.aircraft)
         ? container.aircraft
         : null;
-
   if (!list) {
     // Log the actual payload: this is the one failure a user can't diagnose
     // from the interface, and it is exactly what a maintainer needs to see.
     console.warn(`Unrecognised response from ${answered}:`, payload);
+    return null;
+  }
+  return list.filter((entry): entry is Record<string, unknown> => typeof entry === 'object' && entry !== null);
+}
+
+export async function fetchLivePosition(callsign: string, signal?: AbortSignal): Promise<LiveResult> {
+  let payload: unknown;
+  let answered = '';
+  let failures: string[] = [];
+
+  try {
+    ({ payload, answered, failures } = await askOneService(
+      (endpoint) => endpoint.callsign(encodeURIComponent(callsign)),
+      signal,
+    ));
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      return { state: 'error', message: 'cancelled' };
+    }
+    throw error;
+  }
+
+  const unreachable = whyUnreachable(answered, failures);
+  if (unreachable) return { state: 'error', message: unreachable };
+
+  const list = aircraftList(payload, answered);
+  if (!list) {
     return { state: 'error', message: `${answered} replied in a format this app doesn't recognise.` };
   }
   if (list.length === 0) return { state: 'not-found' };
@@ -207,7 +240,6 @@ export async function fetchLivePosition(callsign: string, signal?: AbortSignal):
   // Prefer an entry that actually carries a position: the feed sometimes knows
   // of an aircraft (from its identifier alone) without a current fix.
   const withPosition = list
-    .filter((entry): entry is Record<string, unknown> => typeof entry === 'object' && entry !== null)
     .map((entry) => ({ entry, lat: num(entry, 'lat', 'latitude'), lon: num(entry, 'lon', 'lng', 'longitude') }))
     .find((c) => c.lat !== undefined && c.lon !== undefined);
 
@@ -234,4 +266,117 @@ export async function fetchLivePosition(callsign: string, signal?: AbortSignal):
       receivedAt: Date.now() - secondsOld * 1000,
     },
   };
+}
+
+/* ------------------------------------------------------- aircraft in an area */
+
+/**
+ * One aircraft in a region, as the feed describes it.
+ *
+ * Richer than `LivePosition` because an area list is read as a list: a row with
+ * no callsign and no vertical rate is a row you can't tell anything from, so
+ * the fields a list needs are carried even though a single tracked flight
+ * doesn't use them.
+ */
+export interface AreaAircraft {
+  /** Radio callsign as broadcast, trimmed. Null when the aircraft isn't sending
+   *  one — common for general aviation and military traffic. */
+  callsign: string | null;
+  lat: number;
+  lon: number;
+  /** Barometric altitude in feet, as aviation quotes it. Undefined when the
+   *  aircraft reports itself on the ground. */
+  altitudeFt?: number;
+  /** Climb (+) or descent (−) in feet per minute. The single most telling field
+   *  in the list: it is what separates an arrival from a departure. */
+  verticalRateFpm?: number;
+  groundSpeedKts?: number;
+  headingDeg?: number;
+  /** The feed says this aircraft is on the ground rather than airborne. */
+  onGround: boolean;
+  /** Aircraft type code (e.g. "A320"), when the feed carries one. */
+  type?: string;
+  registration?: string;
+  receivedAt: number;
+}
+
+export type AreaResult =
+  | { state: 'found'; aircraft: AreaAircraft[] }
+  /** Reached a service; there is simply nothing flying in that circle. */
+  | { state: 'empty' }
+  | { state: 'error'; message: string };
+
+/**
+ * Every aircraft currently within `radiusNm` of a point.
+ *
+ * Same three services, same fallback, same tolerance about field names as the
+ * callsign lookup above — and the same caution applies: this was written
+ * without being able to reach the real services, so it accepts several
+ * plausible spellings of each field rather than assuming one.
+ */
+export async function fetchAircraftNear(
+  lat: number,
+  lon: number,
+  radiusNm: number,
+  signal?: AbortSignal,
+): Promise<AreaResult> {
+  // All three services cap the radius at 250 nm, and a request over the cap is
+  // rejected outright rather than clamped for you.
+  const nm = Math.max(1, Math.min(250, Math.round(radiusNm)));
+  const at = (n: number) => n.toFixed(3);
+
+  let payload: unknown;
+  let answered = '';
+  let failures: string[] = [];
+  try {
+    ({ payload, answered, failures } = await askOneService(
+      (endpoint) => endpoint.area(Number(at(lat)), Number(at(lon)), nm),
+      signal,
+    ));
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      return { state: 'error', message: 'cancelled' };
+    }
+    throw error;
+  }
+
+  const unreachable = whyUnreachable(answered, failures);
+  if (unreachable) return { state: 'error', message: unreachable };
+
+  const list = aircraftList(payload, answered);
+  if (!list) return { state: 'error', message: `${answered} replied in a format this app doesn't recognise.` };
+
+  const now = Date.now();
+  const aircraft: AreaAircraft[] = [];
+  for (const entry of list) {
+    const aLat = num(entry, 'lat', 'latitude');
+    const aLon = num(entry, 'lon', 'lng', 'longitude');
+    if (aLat === undefined || aLon === undefined) continue; // knows of it, can't place it
+
+    // `alt_baro` is the string "ground" for an aircraft on the tarmac, which is
+    // why num() rejects that word rather than coercing it to a number — NaN
+    // here would read as an altitude of zero feet and nothing would say why.
+    const rawAlt = entry.alt_baro ?? entry.altitude ?? entry.alt;
+    const onGround = rawAlt === 'ground' || entry.ground === true;
+
+    const secondsOld = num(entry, 'seen_pos', 'seen') ?? 0;
+    const callsign = typeof entry.flight === 'string' ? entry.flight.trim() : null;
+
+    aircraft.push({
+      callsign: callsign || null,
+      lat: aLat,
+      lon: aLon,
+      altitudeFt: onGround ? undefined : num(entry, 'alt_baro', 'alt_geom', 'altitude', 'alt'),
+      verticalRateFpm: num(entry, 'baro_rate', 'geom_rate', 'vert_rate', 'vrate'),
+      groundSpeedKts: num(entry, 'gs', 'ground_speed', 'speed'),
+      headingDeg: num(entry, 'track', 'heading', 'true_heading'),
+      onGround,
+      type: typeof entry.t === 'string' ? entry.t : typeof entry.type === 'string' ? entry.type : undefined,
+      registration: typeof entry.r === 'string' ? entry.r : undefined,
+      receivedAt: now - secondsOld * 1000,
+    });
+  }
+
+  if (aircraft.length === 0) return { state: 'empty' };
+  return { state: 'found', aircraft };
 }

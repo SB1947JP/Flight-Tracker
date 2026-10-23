@@ -4,7 +4,22 @@ import { Flight, STATUS_LABEL, hasSchedule, loadFlights, resolveProgress, saveFl
 import { useLive } from './useLive';
 import { FlightDetail } from './FlightDetail';
 import { FlightForm } from './FlightForm';
+import { AirfieldView } from './AirfieldView';
+import { KOMAKI } from './airfield';
 import { formatDate } from './time';
+
+/**
+ * The two spaces the app has.
+ *
+ * 'flights' is the tracker proper — the flights you have entered, followed one
+ * at a time. 'komaki' is a live view of one airfield's traffic, which answers a
+ * different question ("what is flying around Nagoya right now") and shares
+ * nothing with the first but the services it asks.
+ */
+type Space = 'flights' | 'komaki';
+
+/** Which space was last open, so a reload comes back where you were. */
+const SPACE_KEY = 'flight-tracker/space/v1';
 
 /**
  * Which flight was last being looked at.
@@ -54,6 +69,21 @@ export default function App() {
     }
   });
   const [editing, setEditing] = useState<{ mode: 'new' } | { mode: 'edit'; flight: Flight } | null>(null);
+  const [space, setSpace] = useState<Space>(() => {
+    try {
+      return localStorage.getItem(SPACE_KEY) === 'komaki' ? 'komaki' : 'flights';
+    } catch {
+      return 'flights';
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SPACE_KEY, space);
+    } catch {
+      // Coming back to the other space after a reload is a small inconvenience.
+    }
+  }, [space]);
 
   useEffect(() => {
     saveFlights(flights);
@@ -124,22 +154,49 @@ export default function App() {
         className="shrink-0 flex items-center justify-between gap-4 px-4 h-12 border-b"
         style={{ borderColor: UI_COLORS.hairline }}
       >
-        <h1 className="text-[11px] uppercase tracking-[0.18em]" style={{ color: UI_COLORS.muted }}>
-          Flight Tracker
-        </h1>
-        <button
-          type="button"
-          onClick={() => setEditing({ mode: 'new' })}
-          className="text-sm px-2.5 py-1 -mr-1 rounded hover:bg-black/5 active:bg-black/10"
-        >
-          + Add
-        </button>
+        {/* The app's name used to sit here. The two spaces replaced it rather
+            than being added below it: a phone screen has no row to spare, and
+            the name was furniture — it is already on the browser tab and on the
+            home-screen icon. */}
+        <nav className="flex items-center gap-1 -ml-2">
+          {(
+            [
+              ['flights', 'Flights'],
+              ['komaki', KOMAKI.iata],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setSpace(id)}
+              aria-current={space === id ? 'page' : undefined}
+              className="text-sm px-2 py-1 rounded hover:bg-black/5"
+              // Weight as well as colour: side by side with nothing else to go
+              // on, ink-against-grey alone is a thin signal for which of two
+              // words you are currently looking at.
+              style={space === id ? { color: UI_COLORS.ink, fontWeight: 500 } : { color: UI_COLORS.muted }}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
+        {/* Adding a flight belongs to the flights list; there is nothing to add
+            to a live view of an airfield. */}
+        {space === 'flights' && (
+          <button
+            type="button"
+            onClick={() => setEditing({ mode: 'new' })}
+            className="text-sm px-2.5 py-1 -mr-1 rounded hover:bg-black/5 active:bg-black/10"
+          >
+            + Add
+          </button>
+        )}
       </header>
 
       {/* The list of flights is a row of names, not a column of cards, and it
           disappears entirely when there is only one flight — which is the usual
           case. A list of one is pure furniture. */}
-      {!editing && ordered.length > 1 && (
+      {space === 'flights' && !editing && ordered.length > 1 && (
         <nav
           className="shrink-0 flex gap-1 px-3 py-2 overflow-x-auto border-b"
           style={{ borderColor: UI_COLORS.hairline }}
@@ -189,7 +246,9 @@ export default function App() {
       )}
 
       <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden [-webkit-overflow-scrolling:touch]">
-        {editing ? (
+        {space === 'komaki' ? (
+          <AirfieldView />
+        ) : editing ? (
           <div className="max-w-lg mx-auto px-4 py-5">
             <h2 className="text-[11px] uppercase tracking-[0.18em] mb-5" style={{ color: UI_COLORS.muted }}>
               {editing.mode === 'new' ? 'New flight' : `Edit ${editing.flight.number}`}

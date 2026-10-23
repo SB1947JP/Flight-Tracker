@@ -4,6 +4,8 @@ Type in a flight number and watch the aircraft: its real position, altitude, spe
 
 That is the whole requirement — no airports, no times. Add the schedule as well and you also get the route drawn, how far it has come, how long is left, and an estimated position for the long stretches where nobody on the ground can hear the aircraft. The app always says which of the two you are looking at.
 
+There is a second space, **NKM**, which answers a different question: what is flying around Nagoya Airfield (Komaki) right now. See [The airfield view](#the-airfield-view) for what it can and can't tell you.
+
 ## Coverage, and why it comes and goes
 
 Live positions come from free community networks — [adsb.lol](https://adsb.lol), [adsb.fi](https://adsb.fi) and [airplanes.live](https://airplanes.live) — where volunteers run receivers that pick up the position aircraft broadcast continuously (ADS-B) and pool them. No account, no key, no cost. All three are asked in turn until one answers, and the one that answered is tried first next time, so the steady state is a single request per poll.
@@ -11,6 +13,16 @@ Live positions come from free community networks — [adsb.lol](https://adsb.lol
 The consequence of "volunteers on the ground" is the thing to understand about the whole feature: **coverage follows people, not aeroplanes.** Over Europe, North America, Japan and eastern Australia it is excellent. In the middle of an ocean there is nobody to hear the broadcast, so a long-haul flight goes quiet for hours. Filling those gaps needs satellite reception, which is a paid service.
 
 So a gap is the normal condition, not a fault. When the signal drops the app keeps the last known position, says how long ago it was, and goes on estimating from the schedule — a great circle flown at a constant rate. An estimate cannot know about holding, diversions or delays, so figures measured from the aircraft are marked with a `·` and the rest are not.
+
+## The airfield view
+
+The second space lists every aircraft within 40 nautical miles of Nagoya Airfield (Komaki, NKM), labelled by what it appears to be doing: **arriving**, **departing**, **on the ground**, or **passing over**.
+
+**It is not a departure board, and can't become one.** There is no free feed of scheduled flights, so nothing here knows that a flight is due out at 09:15. Every row is an aeroplane broadcasting its position at this moment. One that hasn't pushed back yet isn't listed; one that landed an hour ago is long gone. Komaki is a quiet field — an empty list outside its flying hours is the correct answer, and the empty state says so rather than looking like a failure.
+
+The labels are inferred from altitude, vertical rate and distance, with one piece of local knowledge doing most of the work: **Chubu Centrair is 25 km down the road.** Any circle wide enough to catch Komaki's own arrivals contains Centrair and everything descending into it, and Centrair is far busier. So every aircraft is measured against both fields and attributed to the nearer one; traffic working Centrair is listed as `At NGO` rather than being passed off as a Komaki arrival. Anything the maths can't place confidently — no altitude, no vertical rate, or still in the cruise above 13,000 ft — is called "passing over" rather than guessed at. An over-eager guess doesn't read as a guess on screen; it reads as the app being wrong about a flight.
+
+`src/airfield.ts` holds the thresholds and the reasoning; the view itself is `src/AirfieldView.tsx`. Pointing it at a different airfield is a matter of changing the two constants at the top of `airfield.ts`.
 
 ## Look
 
@@ -69,8 +81,11 @@ Rows are parsed on first use, so following a flight by number alone never touche
 | `src/geo.ts` | Great-circle maths — distance, bearing, interpolation, sampling |
 | `src/time.ts` | Airport-local ⇄ UTC conversion, duration and clock formatting |
 | `src/flights.ts` | The flight record, its storage, and everything derived from it |
-| `src/live.ts` | Fetching and parsing live aircraft positions |
-| `src/useLive.ts` | Polling: only airborne, only when visible, every 20s |
+| `src/live.ts` | Fetching and parsing live aircraft positions, one flight or a whole area |
+| `src/useLive.ts` | Polling one flight: only airborne, only when visible, every 20s |
+| `src/airfield.ts` | Which field an aircraft belongs to, and whether it's arriving or departing |
+| `src/useAirfield.ts` | Polling an airfield's traffic, only while that view is open |
+| `src/AirfieldView.tsx` | The NKM space |
 | `src/airlines.ts` | Ticket-number → radio-callsign translation |
 | `src/airports.ts` | Airport lookup and ranked search |
 | `src/airports-data.ts` | Generated airport table — do not hand-edit |
@@ -84,7 +99,9 @@ Position, progress, phase and ETA are all *derived* from the schedule on each ti
 
 ## A caution
 
-`src/live.ts` was written without ever being run against the real service — the machine it was built on couldn't reach the network. Its response handling is deliberately tolerant, accepting several plausible shapes for each field and reporting precisely what it couldn't understand rather than failing blank. Every state (found, nothing found, offline, malformed reply, server error) is covered by a browser test against a simulated service. But the first contact with the real thing is a live test. If the format turns out to be confirmed, the parsing can be tightened considerably.
+The callsign lookup in `src/live.ts` has since been confirmed against the real services. The **area lookup added for the airfield view has not** — the machine it was written on still can't reach them (the three hosts are blocked at its egress proxy), so the URL shapes, in particular adsb.fi's `/lat/…/lon/…/dist/…` form, are from the services' documentation rather than from a reply anyone has seen. If the NKM list is empty when the sky plainly isn't, that is the first thing to check.
+
+`src/live.ts` was originally written without ever being run against the real service — the machine it was built on couldn't reach the network. Its response handling is deliberately tolerant, accepting several plausible shapes for each field and reporting precisely what it couldn't understand rather than failing blank. Every state (found, nothing found, offline, malformed reply, server error) is covered by a browser test against a simulated service. But the first contact with the real thing is a live test. If the format turns out to be confirmed, the parsing can be tightened considerably.
 
 ## Origin
 
