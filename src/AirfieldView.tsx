@@ -82,6 +82,26 @@ export function AirfieldView() {
           </ul>
         </section>
       )}
+
+      {/* Named, and linked, because adsb.fi's terms ask for exactly that in
+          return for open data — and because a list of aeroplanes with no
+          stated source invites the reader to assume it came from somewhere
+          official. It came from volunteers with aerials. */}
+      <p className="mt-6 text-[11px] leading-relaxed" style={{ color: UI_COLORS.muted }}>
+        Positions from{' '}
+        <a href="https://adsb.lol" target="_blank" rel="noreferrer" className="underline underline-offset-2">
+          adsb.lol
+        </a>
+        ,{' '}
+        <a href="https://adsb.fi" target="_blank" rel="noreferrer" className="underline underline-offset-2">
+          adsb.fi
+        </a>{' '}
+        and{' '}
+        <a href="https://airplanes.live" target="_blank" rel="noreferrer" className="underline underline-offset-2">
+          airplanes.live
+        </a>
+        , free community networks of volunteer-run receivers.
+      </p>
     </div>
   );
 }

@@ -15,7 +15,7 @@
  * A list that didn't separate those out would be mostly noise.
  */
 
-import { distanceKm, LatLon } from './geo';
+import { bearingDeg, distanceKm, LatLon } from './geo';
 
 export interface Airfield extends LatLon {
   iata: string;
@@ -89,6 +89,10 @@ const CRUISE_FT = 13_000;
 const CLIMB_FPM = 250;
 /** Inside this, a slow aircraft on the deck is at the field rather than near it. */
 const ON_FIELD_KM = 4;
+/** Low enough and close enough that the aircraft's track says where it's going:
+ *  roughly the last few minutes of an approach, or the first of a climb-out. */
+const APPROACH_FT = 6_000;
+const APPROACH_KM = 35;
 
 /**
  * What one aircraft is doing with respect to `field`.
@@ -99,7 +103,15 @@ const ON_FIELD_KM = 4;
  * wrong about a flight.
  */
 export function classify(
-  aircraft: { lat: number; lon: number; altitudeFt?: number; verticalRateFpm?: number; groundSpeedKts?: number; onGround: boolean },
+  aircraft: {
+    lat: number;
+    lon: number;
+    altitudeFt?: number;
+    verticalRateFpm?: number;
+    groundSpeedKts?: number;
+    headingDeg?: number;
+    onGround: boolean;
+  },
   field: Airfield,
   rivals: Airfield[] = [],
 ): AirfieldTraffic {
@@ -122,8 +134,8 @@ export function classify(
   const heightFt = aircraft.altitudeFt === undefined ? undefined : aircraft.altitudeFt - field.elevationFt;
   const rate = aircraft.verticalRateFpm;
 
-  // No altitude, or no vertical rate, means no basis for a claim.
-  if (heightFt === undefined || rate === undefined) {
+  // No altitude at all means no basis for a claim.
+  if (heightFt === undefined) {
     return { movement: 'passing', distanceKm: distance, heightFt, otherField: nearer };
   }
 
@@ -137,12 +149,30 @@ export function classify(
     return { movement: 'passing', distanceKm: distance, heightFt, otherField: nearer };
   }
 
-  if (rate <= -CLIMB_FPM) return { movement: 'arriving', distanceKm: distance, heightFt };
-  if (rate >= CLIMB_FPM) return { movement: 'departing', distanceKm: distance, heightFt };
+  if (rate !== undefined && rate <= -CLIMB_FPM) return { movement: 'arriving', distanceKm: distance, heightFt };
+  if (rate !== undefined && rate >= CLIMB_FPM) return { movement: 'departing', distanceKm: distance, heightFt };
 
-  // Low, level and close: in the circuit, or being vectored around. Belongs to
-  // the field without being on an obvious leg to or from it.
+  // Low and close, but with no useful vertical rate — either the feed isn't
+  // sending one, or the aircraft is in level flight for a moment, which is
+  // exactly what happens when one is levelled off on an intermediate approach
+  // step a few miles out. Calling that "passing over" is plainly wrong to
+  // anyone who can see the thing out of the window, so fall back to the
+  // question the track answers: is it pointed at this airfield or away from it?
+  if (heightFt <= APPROACH_FT && distance <= APPROACH_KM && aircraft.headingDeg !== undefined) {
+    const offBearing = angleBetween(aircraft.headingDeg, bearingDeg(here, field));
+    if (offBearing <= 60) return { movement: 'arriving', distanceKm: distance, heightFt };
+    if (offBearing >= 120) return { movement: 'departing', distanceKm: distance, heightFt };
+  }
+
+  // Low, level, and going sideways past the field: in the circuit, or being
+  // vectored around. At the field without being on a leg to or from it.
   return { movement: 'passing', distanceKm: distance, heightFt };
+}
+
+/** Smallest angle between two compass bearings, 0–180°. */
+function angleBetween(a: number, b: number): number {
+  const diff = Math.abs(((a - b) % 360) + 360) % 360;
+  return diff > 180 ? 360 - diff : diff;
 }
 
 /** Sort order for the list: what is happening at the field first, nearest first

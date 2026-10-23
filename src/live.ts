@@ -42,31 +42,55 @@
  */
 interface Endpoint {
   name: string;
-  /** Every aircraft currently broadcasting this callsign. */
+  /** Every aircraft currently broadcasting this callsign. One spelling: this is
+   *  the request the app has always made, and it is confirmed working. */
   callsign: (cs: string) => string;
-  /** Every aircraft within `nm` nautical miles of a point. Two of the three
-   *  spell this as a path of its own; adsb.fi puts the parts in named segments.
-   *  All three cap the radius at 250 nm. */
-  area: (lat: number, lon: number, nm: number) => string;
+  /**
+   * Every aircraft within `nm` nautical miles of a point — in the spellings
+   * worth trying, best first.
+   *
+   * A list rather than one URL because the three services do not agree and
+   * their documentation can't be reached from the machine this is written on:
+   * adsb.fi has moved this call to `/v3` and marks `/v2` deprecated, adsb.lol
+   * inherits ADSB Exchange's `lat/lon/dist` shape (it is a drop-in replacement
+   * for that API), and airplanes.live uses a `point` path. Each is tried in
+   * turn and the one that answers is remembered, which is the same tactic the
+   * callsign padding uses in `airlines.ts` and for the same reason: guessing
+   * once and being wrong costs a feature, while trying the plausible spellings
+   * costs one extra request the first time.
+   *
+   * All three cap the radius at 250 nm, and at least one rejects a fractional
+   * one, so `nm` arrives as a whole number.
+   */
+  area: ((lat: number, lon: number, nm: number) => string)[];
 }
 
 const ENDPOINTS: Endpoint[] = [
   {
     name: 'adsb.lol',
     callsign: (cs) => `https://api.adsb.lol/v2/callsign/${cs}`,
-    area: (lat, lon, nm) => `https://api.adsb.lol/v2/point/${lat}/${lon}/${nm}`,
+    area: [
+      (lat, lon, nm) => `https://api.adsb.lol/v2/lat/${lat}/lon/${lon}/dist/${nm}`,
+      (lat, lon, nm) => `https://api.adsb.lol/v2/point/${lat}/${lon}/${nm}`,
+    ],
   },
   {
     name: 'adsb.fi',
     callsign: (cs) => `https://opendata.adsb.fi/api/v2/callsign/${cs}`,
-    area: (lat, lon, nm) => `https://opendata.adsb.fi/api/v2/lat/${lat}/lon/${lon}/dist/${nm}`,
+    area: [
+      (lat, lon, nm) => `https://opendata.adsb.fi/api/v3/lat/${lat}/lon/${lon}/dist/${nm}`,
+      (lat, lon, nm) => `https://opendata.adsb.fi/api/v2/lat/${lat}/lon/${lon}/dist/${nm}`,
+    ],
   },
   {
     name: 'airplanes.live',
     callsign: (cs) => `https://api.airplanes.live/v2/callsign/${cs}`,
-    area: (lat, lon, nm) => `https://api.airplanes.live/v2/point/${lat}/${lon}/${nm}`,
+    area: [(lat, lon, nm) => `https://api.airplanes.live/v2/point/${lat}/${lon}/${nm}`],
   },
 ];
+
+/** Which spelling of the area request worked, per service. */
+const workingAreaForm = new Map<string, number>();
 
 /** The last service that answered, tried first next time. */
 let preferred = 0;
@@ -134,40 +158,59 @@ function num(source: Record<string, unknown>, ...keys: string[]): number | undef
  * `signal` lets a pending request be abandoned when the user selects a
  * different flight, so a slow reply can't overwrite a newer one.
  */
-async function askOneService(urlFor: (endpoint: Endpoint) => string, signal?: AbortSignal) {
+async function askOneService(
+  /** The spellings to try at one service, best first. Usually one. */
+  urlsFor: (endpoint: Endpoint) => string[],
+  signal?: AbortSignal,
+  /** Called with the index of the spelling that worked, so the caller can
+   *  remember it and stop paying for the ones that don't. */
+  onSpellingWorked?: (endpoint: Endpoint, formIndex: number) => void,
+) {
   const failures: string[] = [];
 
   // Start with whichever service worked last, then the rest.
   for (let i = 0; i < ENDPOINTS.length; i++) {
     const index = (preferred + i) % ENDPOINTS.length;
     const endpoint = ENDPOINTS[index];
-    const response = await fetch(urlFor(endpoint), { signal, headers: { Accept: 'application/json' } }).catch(
-      (error: unknown) => {
-        if (error instanceof DOMException && error.name === 'AbortError') throw error;
-        failures.push(`${endpoint.name} unreachable`);
-        return null;
-      },
-    );
-    if (!response) continue;
-    if (!response.ok) {
-      failures.push(`${endpoint.name} replied ${response.status}`);
-      continue;
-    }
 
-    // A service can answer 200 with something that isn't JSON at all — an error
-    // page, or a captive-wifi login screen standing in for the real reply. Treat
-    // that as this service failing rather than letting it throw: the next one
-    // along may well be fine, and it is the whole reason there are three.
-    const payload = await response.json().catch(() => FAILED_TO_PARSE);
-    if (payload === FAILED_TO_PARSE) {
-      failures.push(`${endpoint.name} sent something that wasn't JSON`);
-      continue;
-    }
+    const urls = urlsFor(endpoint);
+    for (let form = 0; form < urls.length; form++) {
+      // Name the path, not just the service, when something goes wrong: these
+      // APIs are undocumented from where this is maintained, so "adsb.lol
+      // replied 404" on its own doesn't say *which request* was wrong, and
+      // that is precisely the thing a bug report needs to carry.
+      const where = `${endpoint.name}${new URL(urls[form]).pathname}`;
 
-    // Remember what worked, so the steady state really is one request per poll
-    // rather than a failing service re-tried first every single time.
-    preferred = index;
-    return { payload: payload as unknown, answered: endpoint.name, failures };
+      const response = await fetch(urls[form], { signal, headers: { Accept: 'application/json' } }).catch(
+        (error: unknown) => {
+          if (error instanceof DOMException && error.name === 'AbortError') throw error;
+          failures.push(`${where} unreachable`);
+          return null;
+        },
+      );
+      if (!response) continue;
+      if (!response.ok) {
+        failures.push(`${where} replied ${response.status}`);
+        continue;
+      }
+
+      // A service can answer 200 with something that isn't JSON at all — an
+      // error page, or a captive-wifi login screen standing in for the real
+      // reply. Treat that as this service failing rather than letting it
+      // throw: the next one along may well be fine, and it is the whole reason
+      // there are three.
+      const payload = await response.json().catch(() => FAILED_TO_PARSE);
+      if (payload === FAILED_TO_PARSE) {
+        failures.push(`${where} sent something that wasn't JSON`);
+        continue;
+      }
+
+      // Remember what worked, so the steady state really is one request per
+      // poll rather than a failing service re-tried first every single time.
+      preferred = index;
+      onSpellingWorked?.(endpoint, form);
+      return { payload: payload as unknown, answered: endpoint.name, failures };
+    }
   }
   return { payload: undefined, answered: '', failures };
 }
@@ -218,7 +261,7 @@ export async function fetchLivePosition(callsign: string, signal?: AbortSignal):
 
   try {
     ({ payload, answered, failures } = await askOneService(
-      (endpoint) => endpoint.callsign(encodeURIComponent(callsign)),
+      (endpoint) => [endpoint.callsign(encodeURIComponent(callsign))],
       signal,
     ));
   } catch (error) {
@@ -330,8 +373,21 @@ export async function fetchAircraftNear(
   let failures: string[] = [];
   try {
     ({ payload, answered, failures } = await askOneService(
-      (endpoint) => endpoint.area(Number(at(lat)), Number(at(lon)), nm),
+      (endpoint) => {
+        const forms = endpoint.area;
+        const known = workingAreaForm.get(endpoint.name);
+        // Once a spelling has answered, ask only in that one.
+        const chosen = known === undefined ? forms : [forms[known]];
+        return chosen.map((form) => form(Number(at(lat)), Number(at(lon)), nm));
+      },
       signal,
+      (endpoint, formIndex) => {
+        if (!workingAreaForm.has(endpoint.name)) {
+          // `formIndex` counts within the list that was *offered*, which is the
+          // full list precisely while nothing is remembered yet.
+          workingAreaForm.set(endpoint.name, formIndex);
+        }
+      },
     ));
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
