@@ -35,68 +35,73 @@ import { FlightProgress } from './flights';
 /**
  * The aircraft marker: an airliner seen from above, nose at the top.
  *
- * Long fuselage, swept wings with engines slung under them, a separate
- * tailplane, and a tail cut flat across the back — the shape every flight
- * tracking site converged on, and the notes below are why they did.
+ * Slim fuselage, swept wings spanning about as wide as the aircraft is long, a
+ * small separate tailplane, and a tail cut flat across the back — traced
+ * against Flightradar24's marker, which is the one people's eyes are trained
+ * on, and the notes below are why it ends up where it does.
  *
  * **It has to survive rotation.** A marker turns to face its heading, and that
  * is the whole difficulty; judging one upright hides every problem it has.
  * Earlier versions were drawn from the aeroplane glyph a phone shows for flight
- * mode — wings and tail merged into one shape, no engines. That is a fine icon
- * precisely because it is only ever drawn at one angle. Rotated to 120-150
- * degrees it stopped reading as an aeroplane and became a star. The separate
- * tailplane and the engines are what give the eye enough landmarks to find the
- * aircraft's axis at any angle.
+ * mode — wings and tail merged into one shape. That is a fine icon precisely
+ * because it is only ever drawn at one angle. Rotated to 120-150 degrees it
+ * stopped reading as an aeroplane and became a star. The separate tailplane is
+ * what gives the eye the landmark it needs to find the aircraft's axis at any
+ * angle, and it is load-bearing: it is the one part of this that cannot be
+ * simplified away.
+ *
+ * **Engine nacelles were drawn under the wings and have been removed.** They
+ * were defensible at the size this was first judged at, and they are two
+ * separate 2.8-unit blobs at the size it actually draws, where they merge with
+ * the wing into a thicker, muddier shape. The reference carries no engines
+ * either, for the same reason.
  *
  * **The long nose is the only asymmetry**, and so the only thing distinguishing
  * front from back. Without it a southbound flight — half of them — points down
  * the screen and stops looking like an aircraft at all.
  *
- * **Nothing is thinner than five units.** The outline is drawn on both sides of
- * every edge and eats about 1.5 units from any section it borders; a wing tip
- * three units deep has no fill left and renders as two lines.
+ * **The outline sets the floor on how fine anything can be.** It is drawn on
+ * both sides of every edge, so it eats roughly twice its width from any section
+ * it borders, and a section with no fill left renders as two converging lines.
+ * At 0.9 that ruled out anything under about five units, which is what made
+ * every earlier version chunkier than the reference; at 0.7 the wing tips and
+ * tailplane can be drawn as fine as they actually are. Thinner still (0.55 was
+ * tried) and the silhouette stops holding its own against a dark tile, which is
+ * the entire reason for having an outline.
  *
  * Yellow with a dark outline: what people already read as "the aeroplane", and
  * the pairing that holds up over pale sea, pale land and dark city alike.
  *
- * Candidates were compared side by side at the size this actually draws AND at
- * ten times that, at 0, 60, 90, 120, 150 and 210 degrees. Every earlier version
- * passed inspection upright and failed at 150 — worth remembering before
- * adjusting any of these numbers.
+ * Candidates were compared side by side with the reference, at the size this
+ * actually draws AND at ten times that, at 0, 60, 120 and 210 degrees. Every
+ * earlier version passed inspection upright and failed when turned — worth
+ * remembering before adjusting any of these numbers.
  */
 const PLANE_PATH = [
-  'M0 -19',
-  'C1.3 -18.1 2.4 -14.4 2.5 -9.4', // nose
-  'L2.5 -2.6', // fuselage, down to the wing root
-  'L15.0 6.2', // wing leading edge, swept
-  'L15.0 8.6', // wing tip
-  'L2.5 4.6', // wing trailing edge
-  'L2.5 11.0', // rear fuselage
-  'L6.6 15.2', // tailplane leading edge
-  'L6.6 17.0', // tailplane tip
-  'L1.5 15.6', // tailplane trailing edge
-  'L1.5 18.2', // tail, cut flat
-  'L-1.5 18.2',
-  'L-1.5 15.6',
-  'L-6.6 17.0',
-  'L-6.6 15.2',
-  'L-2.5 11.0',
-  'L-2.5 4.6',
-  'L-15.0 8.6',
-  'L-15.0 6.2',
-  'L-2.5 -2.6',
-  'L-2.5 -9.4',
-  'C-2.4 -14.4 -1.3 -18.1 0 -19',
+  'M0 -17.5',
+  'C1.1 -16.4 1.9 -12.4 1.9 -8.0', // nose
+  'L1.9 -2.2', // fuselage, down to the wing root
+  'L17.5 5.8', // wing leading edge, swept
+  'L17.5 8.0', // wing tip
+  'L1.9 4.4', // wing trailing edge
+  'L1.9 11.2', // rear fuselage
+  'L6.6 14.8', // tailplane leading edge
+  'L6.6 16.5', // tailplane tip
+  'L1.5 15.1', // tailplane trailing edge
+  'L1.5 17.4', // tail, cut flat
+  'L-1.5 17.4',
+  'L-1.5 15.1',
+  'L-6.6 16.5',
+  'L-6.6 14.8',
+  'L-1.9 11.2',
+  'L-1.9 4.4',
+  'L-17.5 8.0',
+  'L-17.5 5.8',
+  'L-1.9 -2.2',
+  'L-1.9 -8.0',
+  'C-1.9 -12.4 -1.1 -16.4 0 -17.5',
   'Z',
 ].join(' ');
-
-/** Engine nacelles, slung under each wing. Two units wide and easy to dismiss
- *  at this size, but they are a good part of why the silhouette reads as an
- *  airliner rather than a dart. */
-const ENGINES = [
-  { x: 6.0, y: 1.4 },
-  { x: -8.8, y: 1.4 },
-];
 
 const TILE_SIZE = 256;
 const MIN_ZOOM = 1;
@@ -581,24 +586,19 @@ export function RouteMap({
 
           {(livePosition || (progress && progress.status !== 'scheduled')) && (
             <g
-              transform={`translate(${planePx.left} ${planePx.top}) rotate(${planeHeading}) scale(0.95)`}
+              transform={`translate(${planePx.left} ${planePx.top}) rotate(${planeHeading})`}
               fill={UI_COLORS.aircraft}
               stroke="#141414"
-              strokeWidth={0.9}
+              strokeWidth={0.7}
               strokeLinejoin="round"
             >
-              {/* A slim swept-wing silhouette in the manner of the aeroplane
-                  glyph on a phone's status bar, rather than the blunt
-                  straight-edged shape this started as. Drawn nose-up, so the
-                  rotation above is simply the aircraft's track.
+              {/* Drawn nose-up, so the rotation above is simply the aircraft's
+                  track. See PLANE_PATH for why the shape is what it is.
 
                   The outline is doing real work: this sits over map tiles that
                   run from pale sea to dark city, and a solid fill alone
                   disappears against half of them. */}
               <path d={PLANE_PATH} />
-              {ENGINES.map((e) => (
-                <rect key={e.x} x={e.x} y={e.y} width={2.8} height={6.6} rx={1.3} />
-              ))}
             </g>
           )}
         </svg>
