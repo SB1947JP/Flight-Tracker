@@ -239,12 +239,34 @@ async function askOneService(
  * demonstrably fine, which is the usual case when a blocker is the culprit, so
  * the causes actually worth checking are named instead.
  */
-function whyUnreachable(answered: string, failures: string[]): string | null {
+async function whyUnreachable(answered: string, failures: string[], probeUrl: string): Promise<string | null> {
   if (answered) return null;
   if (cspBlocked) {
     return "This page's own security policy blocked the request — that's a bug in the app, not your device.";
   }
-  return `Couldn't reach any flight service (${failures.join(', ')}). If other sites work, a tracker/ad blocker or a private-relay setting is the usual cause — try another browser to check.`;
+
+  // Two very different things look identical from here: nothing left the device
+  // at all, or the request arrived and was answered but the browser refused to
+  // hand the reply over because the service doesn't permit web pages to read it
+  // (no CORS headers). Both surface as a rejected fetch with no status.
+  //
+  // A `no-cors` request tells them apart. It is allowed to succeed where the
+  // normal one can't, because the page agrees in advance not to look at the
+  // result — so it comes back (opaquely) whenever the server is actually
+  // reachable, and fails only when the request genuinely didn't get out.
+  //
+  // One extra request, only when everything has already failed, and the backoff
+  // in the polling hooks keeps that rare.
+  const reachable = await fetch(probeUrl, { mode: 'no-cors' }).then(
+    () => true,
+    () => false,
+  );
+
+  if (reachable) {
+    return `The flight services are answering, but refusing to let a web page read the reply (no CORS headers), so this app can't use them from a browser. That is a change at their end, not a fault on your device or your connection. Tried: ${failures.join(', ')}.`;
+  }
+
+  return `Couldn't reach any flight service (${failures.join(', ')}). Nothing left this device, so a tracker/ad blocker, a VPN or a private-relay setting is the usual cause — try another browser to check.`;
 }
 
 /**
@@ -288,7 +310,7 @@ export async function fetchLivePosition(callsign: string, signal?: AbortSignal):
     throw error;
   }
 
-  const unreachable = whyUnreachable(answered, failures);
+  const unreachable = await whyUnreachable(answered, failures, ENDPOINTS[0].callsign('TEST'));
   if (unreachable) return { state: 'error', message: unreachable };
 
   const list = aircraftList(payload, answered);
@@ -426,7 +448,7 @@ export async function fetchAircraftNear(
     throw error;
   }
 
-  const unreachable = whyUnreachable(answered, failures);
+  const unreachable = await whyUnreachable(answered, failures, ENDPOINTS[0].area[0](Number(at(lat)), Number(at(lon)), nm));
   if (unreachable) return { state: 'error', message: unreachable };
 
   const list = aircraftList(payload, answered);
